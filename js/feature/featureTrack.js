@@ -295,6 +295,12 @@ var igv = (function (igv) {
         else if (feature.color) {
             color = feature.color;
         }
+        else if (this.config.colorByFn) {
+            var specialColor = this.config.colorByFn(this, feature);
+            if (specialColor) {
+                color = specialColor;
+            }
+        }
 
 
         ctx.fillStyle = color;

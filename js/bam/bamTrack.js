@@ -893,7 +893,12 @@ var igv = (function (igv) {
                 }
                 break;
             default:
-                color = alignmentTrack.parent.color;
+                var parent = alignmentTrack.parent;
+                if (parent.config.colorByFn) {
+                    color = parent.config.colorByFn(alignmentTrack, alignment) || parent.color;
+                } else {
+                    color = parent.color;
+                }
         }
         return color;
 
