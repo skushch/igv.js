@@ -25,6 +25,8 @@
 
 var igv = (function (igv) {
 
+    var igvjs_version = "beta";
+
     /**
      * Create an igv.browser instance.  This object defines the public API for interacting with the genome browser.
      *
@@ -41,8 +43,6 @@ var igv = (function (igv) {
             browser,
             rootDiv,
             controlDiv,
-            $parent = $(parentDiv),
-            palette,
             trackOrder = 1;
 
         if (igv.browser) {
@@ -109,6 +109,14 @@ var igv = (function (igv) {
 
         });
 
+        $(document).click(function (e) {
+            var target = e.target;
+            if (!igv.browser.div.contains(target)) {
+                // We've clicked outside the IGV div.  Close any open popovers.
+                igv.popover.hide();
+            }
+        });
+
 
         // DOM
         $(parentDiv).append($(rootDiv));
@@ -130,6 +138,13 @@ var igv = (function (igv) {
         $(contentDiv).append(headerDiv);
 
         $(contentDiv).append(trackContainerDiv);
+
+
+        if (config.showVerticalLine) {
+            igv.browser.verticalLineDiv = $('<div class="igv-vertical-line-div">')[0];
+            $(trackContainerDiv).append(igv.browser.verticalLineDiv);
+        }
+
 
         // user feedback
         browser.userFeedback = new igv.UserFeedback($(contentDiv));
@@ -372,6 +387,7 @@ var igv = (function (igv) {
         config.showKaryo = config.showKaryo || false;
         if (config.showControls === undefined) config.showControls = true;
         if (config.showNavigation === undefined) config.showNavigation = true;
+        if (config.showRuler === undefined) config.showRuler = true;
         if (config.showSequence === undefined) config.showSequence = true;
         if (config.showIdeogram === undefined) config.showIdoegram = true;
         if (config.flanking === undefined) config.flanking = 1000;
@@ -395,11 +411,9 @@ var igv = (function (igv) {
     }
 
 
-    // Performs an anonymous usage count.  Essential for continued funding of igv.js, please do not remove.
-
+    // Increments an anonymous usage count.  Essential for continued funding of igv.js, please do not remove.
     function phoneHome() {
-
-        var url = "https://data.broadinstitute.org/igv/projects/current/counter_igvjs.php";
+        var url = "https://data.broadinstitute.org/igv/projects/current/counter_igvjs.php?version=" + igvjs_version;
         igvxhr.load(url).then(function (ignore) {
             console.log(ignore);
         }).catch(function (error) {
