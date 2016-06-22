@@ -25,7 +25,7 @@
 
 var igv = (function (igv) {
 
-    var igvjs_version = "1.0.1";
+    var igvjs_version = "beta";
 
     /**
      * Create an igv.browser instance.  This object defines the public API for interacting with the genome browser.
@@ -43,8 +43,6 @@ var igv = (function (igv) {
             browser,
             rootDiv,
             controlDiv,
-            $parent = $(parentDiv),
-            palette,
             trackOrder = 1;
 
         if (igv.browser) {
@@ -140,6 +138,13 @@ var igv = (function (igv) {
         $(contentDiv).append(headerDiv);
 
         $(contentDiv).append(trackContainerDiv);
+
+
+        if (config.showVerticalLine) {
+            igv.browser.verticalLineDiv = $('<div class="igv-vertical-line-div">')[0];
+            $(trackContainerDiv).append(igv.browser.verticalLineDiv);
+        }
+
 
         // user feedback
         browser.userFeedback = new igv.UserFeedback($(contentDiv));
