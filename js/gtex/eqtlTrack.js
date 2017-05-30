@@ -134,10 +134,16 @@ var igv = (function (igv) {
         function drawEqtls(drawSelected) {
 
             var radius = drawSelected ? 2 * track.dotSize : track.dotSize,
-                eqtl, i, px, py, color, isSelected, snp, geneName, selection;
+                eqtl,
+                i,
+                px,
+                py,
+                color,
+                isSelected,
+                snp,
+                geneName,
+                selection;
 
-
-            //ctx.fillStyle = igv.selection.colorForGene(eqtl.geneName);
             igv.graphics.setProperties(ctx, {
                 fillStyle: "rgb(180, 180, 180)",
                 strokeStyle: "rgb(180, 180, 180)"
@@ -148,7 +154,7 @@ var igv = (function (igv) {
                 eqtl = featureList[i];
                 snp = eqtl.snp.toUpperCase();
                 geneName = eqtl[track.geneField].toUpperCase();
-                selection = igv.browser.selection;
+                selection = options.genomicState.selection;
                 isSelected = selection &&
                 (selection.snp === snp || selection.gene === geneName);
 
@@ -196,17 +202,23 @@ var igv = (function (igv) {
         igv.browser.update();
     }
 
+
+    igv.EqtlTrack.prototype.popupDataWithConfiguration = function (config) {
+        return this.popupData(config.genomicLocation, config.x, config.y, config.viewport.genomicState.referenceFrame)
+    };
+
+
     /**
      * Return "popup data" for feature @ genomic location.  Data is an array of key-value pairs
      */
-    igv.EqtlTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset) {
+    igv.EqtlTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset, referenceFrame) {
 
         // We use the featureCache property rather than method to avoid async load.  If the
         // feature is not already loaded this won't work,  but the user wouldn't be mousing over it either.
         if (this.featureSource.featureCache) {
 
-            var chr = igv.browser.referenceFrame.chr,  // TODO -- this should be passed in
-                tolerance = 2 * this.dotSize * igv.browser.referenceFrame.bpPerPixel,
+            var chr = referenceFrame.chrName,
+                tolerance = 2 * this.dotSize * referenceFrame.bpPerPixel,
                 featureList = this.featureSource.featureCache.queryFeatures(chr, genomicLocation - tolerance, genomicLocation + tolerance),
                 dotSize = this.dotSize,
                 tissue = this.name;

@@ -23,52 +23,42 @@
  * THE SOFTWARE.
  */
 
-/**
- * Created by turner on 5/22/15.
- */
 var igv = (function (igv) {
 
     igv.WindowSizePanel = function ($parent) {
 
-        this.contentDiv = $('<div class="igv-windowsizepanel-content-div"></div>');
-        $parent.append(this.contentDiv[0]);
+        this.$content = $('<div class="igv-windowsizepanel-content-div">');
+        $parent.append(this.$content);
 
     };
 
-    igv.WindowSizePanel.prototype.update = function (size) {
+    igv.WindowSizePanel.prototype.show = function () {
+        this.$content.show();
+    };
 
-        var value,
-            floored,
-            denom,
-            units;
+    igv.WindowSizePanel.prototype.hide = function () {
+        this.$content.hide();
+    };
 
-        this.contentDiv.text( prettyNumber( size ) );
+    igv.WindowSizePanel.prototype.updateWithGenomicState = function (genomicState) {
 
-        function prettyNumber(size) {
+        var viewportWidth,
+            referenceFrame,
+            length;
 
-            if (size > 1e7) {
-                denom = 1e6;
-                units = " mb";
-            } else if (size > 1e4) {
-
-                denom = 1e3;
-                units = " kb";
-
-                value = size/denom;
-                floored = Math.floor(value);
-                return igv.numberFormatter(floored) + units;
-            } else {
-                return igv.numberFormatter(size) + " bp";
-            }
-
-            value = size/denom;
-            floored = Math.floor(value);
-
-            return floored.toString() + units;
+        if (1 === genomicState.locusCount && 'all' !== genomicState.locusSearchString) {
+            this.show();
+        } else {
+            this.hide();
         }
 
-    };
+        viewportWidth = igv.Viewport.viewportWidthAtLocusIndex(genomicState.locusIndex);
+        referenceFrame = genomicState.referenceFrame;
 
+        length = viewportWidth * referenceFrame.bpPerPixel;
+
+        this.$content.text( igv.prettyBasePairNumber(Math.round(length)) );
+    };
 
     return igv;
 })

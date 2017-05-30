@@ -66,13 +66,11 @@ var igv = (function (igv) {
             this.featureSource = new igv.T2DVariantSource(config);
         }
 
-    }
-
+    };
 
     igv.GWASTrack.prototype.getFeatures = function (chr, bpStart, bpEnd) {
        return this.featureSource.getFeatures(chr, bpStart, bpEnd);
-    }
-
+    };
 
     igv.GWASTrack.prototype.draw = function (options) {
 
@@ -135,7 +133,6 @@ var igv = (function (igv) {
 
     };
 
-
     igv.GWASTrack.prototype.paintAxis = function (ctx, pixelWidth, pixelHeight) {
 
         var track = this,
@@ -166,7 +163,12 @@ var igv = (function (igv) {
     };
 
 
-    igv.GWASTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset) {
+    igv.GWASTrack.prototype.popupDataWithConfiguration = function (config) {
+        return this.popupData(config.genomicLocation, config.x, config.y, config.viewport.genomicState.referenceFrame)
+    };
+
+
+    igv.GWASTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset, referenceFrame) {
 
         var i,
             len,
@@ -219,6 +221,9 @@ var igv = (function (igv) {
         return data;
     };
 
+    igv.GWASTrack.prototype.popupDataWithConfiguration = function (config) {
+        return this.popupData(config.genomicLocation, config.x, config.y, config.viewport.genomicState.referenceFrame);
+    };
 
     return igv;
 

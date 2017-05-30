@@ -69,14 +69,8 @@ var igv = (function (igv) {
                     loadRange = {start: requestedRange.start, size: bufferSize};
                 }
 
-                igvxhr.loadArrayBuffer(self.path,
-                    {
-                        headers: self.config.headers,
-                        range: loadRange,
-                        withCredentials: self.config.withCredentials
-                    }).then(function (arrayBuffer) {
-                    // TODO -- handle error
-
+                igvxhr.loadArrayBuffer(self.path, igv.buildOptions(self.config, {range: loadRange}))
+                    .then(function (arrayBuffer) {
                     self.data = arrayBuffer;
                     self.range = loadRange;
                     subbuffer(self, requestedRange, asUint8);

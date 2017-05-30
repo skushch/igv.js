@@ -40,7 +40,7 @@ var igv = (function (igv) {
 
         }
     };
-    var sortDirection = 1;
+    var sortDirection = "ASC";
 
     igv.AneuTrack = function (config) {
 
@@ -85,14 +85,6 @@ var igv = (function (igv) {
 
     };
 
-    igv.AneuTrack.prototype.popupMenuItems = function (popover) {
-
-        var myself = this;
-
-        return [];
-
-    };
-
     igv.AneuTrack.prototype.getSummary = function (chr, bpStart, bpEnd, continuation) {
         var me = this;
         var filtersummary = function (redlinedata) {
@@ -114,7 +106,7 @@ var igv = (function (igv) {
             log("Aneu track has no summary data yet");
             continuation(null);
         }
-    }
+    };
 
     igv.AneuTrack.prototype.loadSummary = function (chr, bpStart, bpEnd, continuation) {
         var self = this;
@@ -130,27 +122,18 @@ var igv = (function (igv) {
 //        		log("Got json: " + JSON.stringify(json));
                     self.featureSourceRed = new igv.AneuFeatureSource(config, json.redline);
                     self.getSummary(chr, bpStart, bpEnd, continuation);
-                }
-                else {
+                } else {
                     //log("afterJsonLoaded: got no json result for "+config.url);
                 }
             };
 
-            afterload = {
-                headers: self.config.headers, // http headers, not file header
-                tokens: self.config.tokens, // http headers, not file header
-                success: afterJsonLoaded,
-                withCredentials: self.config.withCredentials
-            };
-            var config = self.config;
-            if (config.localFile) {
-                igvxhr.loadStringFromFile(config.localFile, afterload);
-            } else {
-                igvxhr.loadString(config.url, afterload);
-            }
+            afterload = igv.buildOptions(self.config, {tokens: self.config.tokens, success: afterJsonLoaded});
+
+            igvxhr.loadString(self.config.url, afterload);
+
             return null;
         }
-    }
+    };
 
     igv.AneuTrack.prototype.getFeatures = function (chr, bpStart, bpEnd) {
 
@@ -175,7 +158,7 @@ var igv = (function (igv) {
 
             });
         });
-    }
+    };
 
     function loadJson() {
 
@@ -183,34 +166,27 @@ var igv = (function (igv) {
 
         return new Promise(function (fulfill, reject) {
 
+            var afterJsonLoaded,
+                afterload;
+
             if (self.featureSourceRed) {
                 fulfill();
-            }
-            else {
-                var afterJsonLoaded = function (json) {
-                        json = JSON.parse(json);
-                        log("Got json: " + json + ", diff :" + json.diff);
-                        self.featureSource = new igv.AneuFeatureSource(config, json.diff);
-                        self.featureSourceRed = new igv.AneuFeatureSource(config, json.redline);
-                        fulfill();
-                    },
+            } else {
+                afterJsonLoaded = function (json) {
+                    json = JSON.parse(json);
+                    log("Got json: " + json + ", diff :" + json.diff);
+                    self.featureSource = new igv.AneuFeatureSource(config, json.diff);
+                    self.featureSourceRed = new igv.AneuFeatureSource(config, json.redline);
+                    fulfill();
+                };
 
-                    afterload = {
-                        headers: self.config.headers, // http headers, not file header
-                        tokens: self.config.tokens, // http headers, not file header
-                        withCredentials: self.config.withCredentials
-                    };
+                afterload = igv.buildOptions(self.config, {tokens: self.config.tokens});
 
-                var config = self.config;
-                if (config.localFile) {
-                    igvxhr.loadStringFromFile(config.localFile, afterload).then(afterJsonLoaded);
-                } else {
-                    igvxhr.loadString(config.url, afterload).then(afterJsonLoaded);
-                }
+                igvxhr.loadString(self.config.url, afterload).then(afterJsonLoaded);
+
             }
         });
     }
-
 
     igv.AneuTrack.prototype.getColor = function (value) {
         var expected = 2;
@@ -475,7 +451,7 @@ var igv = (function (igv) {
      */
     igv.AneuTrack.prototype.sortSamples = function (chr, bpStart, bpEnd, direction, callback) {
 
-        var myself = this, segment, min, max, f, i, s, sampleNames, len = bpEnd - bpStart, scores = {};
+        var self = this, segment, min, max, f, i, s, sampleNames, len = bpEnd - bpStart, scores = {};
 
         this.featureSource.getFeatures(chr, bpStart, bpEnd, function (featureList) {
 
@@ -498,7 +474,7 @@ var igv = (function (igv) {
             }
 
             // Now sort sample names by score
-            sampleNames = Object.keys(myself.samples);
+            sampleNames = Object.keys(self.samples);
             sampleNames.sort(function (a, b) {
 
                 var s1 = scores[a];
@@ -516,9 +492,11 @@ var igv = (function (igv) {
 
             // Finally update sample hash
             for (i = 0; i < sampleNames.length; i++) {
-                myself.samples[sampleNames[i]] = i;
+                self.samples[sampleNames[i]] = i;
             }
-            myself.sampleNames = sampleNames;
+            self.sampleNames = sampleNames;
+
+
 
             callback();
 
@@ -530,22 +508,24 @@ var igv = (function (igv) {
      * (optional).
      *
      * @param genomicLocation
+     * @param referenceFrame
      * @param event
      */
-    igv.AneuTrack.prototype.altClick = function (genomicLocation, event) {
+    igv.AneuTrack.prototype.altClick = function (genomicLocation, referenceFrame, event) {
 
         // Define a region 5 "pixels" wide in genomic coordinates
-        var refFrame = igv.browser.referenceFrame, bpWidth = refFrame.toBP(2.5), bpStart = genomicLocation - bpWidth, bpEnd = genomicLocation
-            + bpWidth, chr = refFrame.chr, track = this;
+        var bpWidth = referenceFrame.toBP(2.5);
 
-        this.sortSamples(chr, bpStart, bpEnd, sortDirection, function () {
-            track.trackView.update();
-        });
-
-        sortDirection *= -1;
+        this.sortSamples(referenceFrame.chr, genomicLocation - bpWidth, genomicLocation + bpWidth, sortDirection);
+        sortDirection = (sortDirection === "ASC" ? "DESC" : "ASC");
     };
 
-    igv.AneuTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset) {
+
+    igv.AneuTrack.prototype.popupDataWithConfiguration = function (config) {
+        return this.popupData(config.genomicLocation, config.x, config.y, config.viewport.genomicState.referenceFrame)
+    };
+
+    igv.AneuTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset, referenceFrame) {
 
         var sampleName, row = Math.floor(yOffset / this.sampleHeight), items;
 
@@ -568,10 +548,8 @@ var igv = (function (igv) {
             // feature is not already loaded this won't work, but the user
             // wouldn't be mousing over it either.
             if (this.featureSource.featureCache) {
-                var chr = igv.browser.referenceFrame.chr; // TODO -- this
-                // should be passed
-                // in
-                var featureList = this.featureSource.featureCache.queryFeatures(chr, genomicLocation, genomicLocation);
+                var chr = referenceFrame.chrName,
+                    featureList = this.featureSource.featureCache.queryFeatures(chr, genomicLocation, genomicLocation);
                 featureList.forEach(function (f) {
                     if (f.sample === sampleName) {
                         items.push({
@@ -590,11 +568,8 @@ var igv = (function (igv) {
                 });
             }
             if (this.featureSourceRed.featureCache) {
-                var chr = igv.browser.referenceFrame.chr; // TODO -- this
-                // should be passed
-                // in
-                var featureList = this.featureSourceRed.featureCache.queryFeatures(chr, genomicLocation,
-                    genomicLocation);
+                var chr = referenceFrame.chrName,
+                    featureList = this.featureSourceRed.featureCache.queryFeatures(chr, genomicLocation, genomicLocation);
                 featureList.forEach(function (f) {
                     if (f.sample === sampleName) {
                         items.push({
@@ -617,7 +592,7 @@ var igv = (function (igv) {
         }
 
         return null;
-    }
+    };
 
     return igv;
 

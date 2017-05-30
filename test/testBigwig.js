@@ -1,5 +1,7 @@
 function runBigwigTests() {
 
+    var dataURL = "https://data.broadinstitute.org/igvdata/test/data/"
+
     function createMockObjects(bpPerPixel) {
 
         igv = igv || {};
@@ -10,10 +12,11 @@ function runBigwigTests() {
 
     asyncTest("Bigwig meta data", function () {
 
-        var url,
+        var url = dataURL + "/bigwig/bigWigExample.bw",
             bwReader;
 
-        url = "http://data.broadinstitute.org/igvdata/test/data/bigwig/bigWigExample.bw";
+        createMockObjects();
+
         bwReader = new igv.BWReader({url: url});
         ok(bwReader);
 
@@ -55,14 +58,18 @@ function runBigwigTests() {
             equal("BigWig", type);
 
             start();
+        }).catch(function (error) {
+            console.log(error);
+            ok(false);
         });
-
     });
 
     asyncTest("R+ Tree", function () {
-        var url = "http://data.broadinstitute.org/igvdata/test/data/bigwig/bigWigExample.bw";
 
-        var bwReader = new igv.BWReader({url: url});
+        createMockObjects();
+
+        var url = dataURL + "bigwig/bigWigExample.bw",
+            bwReader = new igv.BWReader({url: url});
 
         bwReader.loadHeader().then(function () {
 
@@ -74,13 +81,16 @@ function runBigwigTests() {
 
                 start();
             });
+        }).catch(function (error) {
+            console.log(error);
+            ok(false);
         });
     });
 
     asyncTest("Wig features", function () {
 
         //chr21:19,146,376-19,193,466
-        var url = "http://data.broadinstitute.org/igvdata/test/data/bigwig/bigWigExample.bw",
+        var url = dataURL + "bigwig/bigWigExample.bw",
             chr = "chr21",
             bpStart = 19168957,
             bpEnd = 19170640,
@@ -90,20 +100,23 @@ function runBigwigTests() {
 
         var bWSource = new igv.BWSource({url: url});
 
-        bWSource.getFeatures(chr, bpStart, bpEnd, function (features) {
+        bWSource.getFeatures(chr, bpStart, bpEnd).then(function (features) {
 
             ok(features);
 
             equal(features.length, 337);   // Verified in iPad app
 
             start();
+        }).catch(function (error) {
+            console.log(error);
+            ok(false);
         });
     });
 
     asyncTest("Zoom data", function () {
 
         //chr21:19,146,376-19,193,466
-        var url = "http://data.broadinstitute.org/igvdata/test/data/bigwig/bigWigExample.bw",
+        var url = dataURL + "bigwig/bigWigExample.bw",
             chr = "chr21",
             bpStart = 18728264,
             bpEnd = 26996291,
@@ -113,20 +126,23 @@ function runBigwigTests() {
 
         var bWSource = new igv.BWSource({url: url});
 
-        bWSource.getFeatures(chr, bpStart, bpEnd, function (features) {
+        bWSource.getFeatures(chr, bpStart, bpEnd, bpPerPixel).then(function (features) {
 
             ok(features);
 
             equal(features.length, 324);   // Verified in iPad app
 
             start();
-        });
+        }).catch(function (error) {
+            console.log(error);
+            ok(false);
+        })
     });
 
     asyncTest("Bed features", function () {
 
         //chr21:19,146,376-19,193,466
-        var url = "http://data.broadinstitute.org/igvdata/test/data/bigwig/bigBedExample.bb",
+        var url = dataURL + "bigwig/bigBedExample.bb",
             chr = "chr21",
             bpStart = 33031597,
             bpEnd = 33041570,
@@ -136,13 +152,16 @@ function runBigwigTests() {
 
         var bWSource = new igv.BWSource({url: url});
 
-        bWSource.getFeatures(chr, bpStart, bpEnd, function (features) {
+        bWSource.getFeatures(chr, bpStart, bpEnd, bpPerPixel).then(function (features) {
 
             ok(features);
 
             equal(features.length, 23);   // Verified in iPad app
 
             start();
+        }).catch(function (error) {
+            console.log(error);
+            ok(false);
         });
     });
 

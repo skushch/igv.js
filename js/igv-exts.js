@@ -152,80 +152,19 @@ if (typeof String.prototype.endsWith === "undefined") {
     }
 }
 
-if (typeof String.prototype.contains === "undefined") {
-    String.prototype.contains = function (it) {
+if (typeof String.prototype.includes === "undefined") {
+    String.prototype.includes = function (it) {
         return this.indexOf(it) != -1;
     };
 }
 
+
 if (typeof String.prototype.splitLines === "undefined") {
-    String.prototype.splitLines = function () {
+    Object.defineProperty(String.prototype, 'splitLines', {value: function() {
         return this.split(/\r\n|\n|\r/gm);
-    }
+    }, enumerable: false, configurable: false})
 }
 
-if (typeof Array.prototype.shuffle === "undefined") {
-    // Randomly shuffle contents of an array
-    Array.prototype.shuffle = function () {
-        for (var j, x, i = this.length; i; j = parseInt(Math.random() * i), x = this[--i], this[i] = this[j], this[j] = x);
-        return this;
-    };
-}
-
-if (typeof Array.prototype.swap === "undefined") {
-    Array.prototype.swap = function (a, b) {
-        var tmp = this[a];
-        this[a] = this[b];
-        this[b] = tmp;
-    }
-}
-
-
-if (typeof Array.prototype.heapSort === "undefined") {
-
-    Array.prototype.heapSort = function (compare) {
-
-        var array = this,
-            size = this.length,
-            temp;
-        buildMaxHeap(array);
-        for (var i = size - 1; i > 0; i -= 1) {
-            temp = array[0];
-            array[0] = array[i];
-            array[i] = temp;
-            size -= 1;
-            heapify(array, 0, size);
-        }
-        return array;
-
-        function heapify(array, index, heapSize) {
-
-            var left = 2 * index + 1,
-                right = 2 * index + 2,
-                largest = index;
-
-            if (left < heapSize && compare(array[left], array[index]) > 0)
-                largest = left;
-
-            if (right < heapSize && compare(array[right], array[largest]) > 0)
-                largest = right;
-
-            if (largest !== index) {
-                var temp = array[index];
-                array[index] = array[largest];
-                array[largest] = temp;
-                heapify(array, largest, heapSize);
-            }
-        }
-
-        function buildMaxHeap(array) {
-            for (var i = Math.floor(array.length / 2); i >= 0; i -= 1) {
-                heapify(array, i, array.length);
-            }
-            return array;
-        }
-    }
-}
 
 if (typeof Uint8Array.prototype.toText === "undefined") {
 

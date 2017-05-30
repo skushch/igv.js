@@ -29,12 +29,34 @@ var igv = (function (igv) {
     igv.RulerTrack = function () {
 
         this.height = 50;
+        // this.height = 24;
         this.name = "";
         this.id = "ruler";
         this.disableButtons = true;
         this.ignoreTrackMenu = true;
         this.order = -Number.MAX_VALUE;
+        this.supportsWholeGenome = false;
+        
+    };
 
+    igv.RulerTrack.prototype.locusLabelWithViewport = function (viewport) {
+
+        var locusLabel = $('<div class = "igv-viewport-content-ruler-div">');
+
+        locusLabel.text(viewport.genomicState.locusSearchString);
+
+        locusLabel.click(function (e) {
+
+            var genomicState = viewport.genomicState,
+                initialReferenceFrame = genomicState.initialReferenceFrame;
+
+            genomicState.referenceFrame = new igv.ReferenceFrame(initialReferenceFrame.chrName, initialReferenceFrame.start, initialReferenceFrame.bpPerPixel);
+
+            // igv.browser.updateWithLocusIndex(genomicState.locusIndex);
+            igv.browser.selectMultiLocusPanelWithGenomicState(genomicState);
+        });
+
+        return locusLabel;
     };
 
     igv.RulerTrack.prototype.getFeatures = function (chr, bpStart, bpEnd) {
@@ -42,48 +64,70 @@ var igv = (function (igv) {
         return new Promise(function (fulfill, reject) {
             fulfill([]);
         });
-    }
+    };
 
     igv.RulerTrack.prototype.draw = function (options) {
 
-        var fontStyle,
-            ctx = options.context,
-            range,
-            ts,
+        var ts,
             spacing,
             nTick,
-            x;
+            x,
+            l,
+            yShim,
+            tickHeight,
+            bpPerPixel;
 
-        fontStyle = { textAlign: 'center', font: '10px PT Sans', fillStyle: "rgba(64, 64, 64, 1)", strokeStyle: "rgba(64, 64, 64, 1)" };
+        if (options.referenceFrame.chrName === "all") {
+            drawAll.call(this);
+        } else {
+            updateLocusLabelWithGenomicState(options.genomicState);
 
-        range = Math.floor(1100 * options.bpPerPixel);
-        ts = findSpacing(range);
-        spacing = ts.majorTick;
+            bpPerPixel = options.referenceFrame.bpPerPixel;
+            ts = findSpacing( Math.floor(options.viewportWidth * bpPerPixel) );
+            spacing = ts.majorTick;
 
-        // Find starting point closest to the current origin
-        nTick = Math.floor(options.bpStart / spacing) - 1;
-        x = 0;
+            // Find starting point closest to the current origin
+            nTick = Math.floor(options.bpStart / spacing) - 1;
+            x = 0;
 
-        //canvas.setProperties({textAlign: 'center'});
-        igv.graphics.setProperties(ctx, fontStyle );
-        while (x < options.pixelWidth) {
+            while (x < options.pixelWidth) {
 
-            var l = Math.floor(nTick * spacing),
-                shim = 2;
+                l = Math.floor(nTick * spacing);
+                yShim = 2;
+                tickHeight = 6;
 
-            x = Math.round(((l - 1) - options.bpStart + 0.5) / options.bpPerPixel);
-            var chrPosition = formatNumber(l / ts.unitMultiplier, 0) + " " + ts.majorUnit;
+                x = Math.round(((l - 1) - options.bpStart + 0.5) / bpPerPixel);
+                var chrPosition = formatNumber(l / ts.unitMultiplier, 0) + " " + ts.majorUnit;
 
-            if (nTick % 1 == 0) {
-                igv.graphics.fillText(ctx, chrPosition, x, this.height - 15);
+                if (nTick % 1 == 0) {
+                    igv.graphics.fillText(options.context, chrPosition, x, this.height - (tickHeight / 0.75));
+                }
+
+                igv.graphics.strokeLine(options.context, x, this.height - tickHeight, x, this.height - yShim);
+
+                nTick++;
             }
+            igv.graphics.strokeLine(options.context, 0, this.height - yShim, options.pixelWidth, this.height - yShim);
 
-            igv.graphics.strokeLine(ctx, x, this.height - 10, x, this.height - shim);
-
-            nTick++;
         }
-        igv.graphics.strokeLine(ctx, 0, this.height - shim, options.pixelWidth, this.height - shim);
 
+        function updateLocusLabelWithGenomicState(genomicState) {
+            var $e,
+                viewports;
+
+            $e = options.viewport.$viewport.find('.igv-viewport-content-ruler-div');
+            $e.text(genomicState.locusSearchString);
+
+            // viewports = _.filter(igv.Viewport.viewportsWithLocusIndex(genomicState.locusIndex), function(viewport){
+            //     return (viewport.trackView.track instanceof igv.RulerTrack);
+            // });
+            //
+            // if (1 === _.size(viewports)) {
+            //     $e = _.first(viewports).$viewport.find('.igv-viewport-content-ruler-div');
+            //     $e.text( genomicState.locusSearchString );
+            // }
+
+        }
 
         function formatNumber(anynum, decimal) {
             //decimal  - the number of decimals after the digit from 0 to 3
@@ -145,7 +189,32 @@ var igv = (function (igv) {
         }
 
 
+        function drawAll() {
+
+            var self = this,
+                lastX = 0,
+                yShim = 2,
+                tickHeight = 10;
+
+            _.each(igv.browser.genome.wgChromosomeNames, function (chrName) {
+
+                var chromosome = igv.browser.genome.getChromosome(chrName),
+                    bp = igv.browser.genome.getGenomeCoordinate(chrName, chromosome.bpLength),
+                    x = Math.round((bp - options.bpStart ) / bpPerPixel),
+                    chrLabel = chrName.startsWith("chr") ? chrName.substr(3) : chrName;
+
+                options.context.textAlign = 'center';
+                igv.graphics.strokeLine(options.context, x, self.height - tickHeight, x, self.height - yShim);
+                igv.graphics.fillText(options.context, chrLabel, (lastX + x) / 2, self.height - (tickHeight / 0.75));
+
+                lastX = x;
+
+            })
+            igv.graphics.strokeLine(options.context, 0, self.height - yShim, options.pixelWidth, self.height - yShim);
+        }
+
     };
+
 
     function TickSpacing(majorTick, majorUnit, unitMultiplier) {
         this.majorTick = majorTick;

@@ -133,7 +133,6 @@ var igv = (function (igv) {
                     value = readShort(ba, p + 3);
                     p += 5;
                 } else if (type === 'f') {
-                    // TODO 'FIXME need floats';
                     value = readFloat(ba, p + 3);
                     p += 7;
                 } else if (type === 'Z') {
@@ -174,7 +173,9 @@ var igv = (function (igv) {
 
         // if the user clicks on a base next to an insertion, show just the
         // inserted bases in a popup (like in desktop IGV).
-        var nameValues = [], isFirst, tagDict;
+        var nameValues = [],
+            isFirst,
+            tagDict;
 
         if(this.insertions) {
             for(var i = 0; i < this.insertions.length; i += 1) {
@@ -209,7 +210,7 @@ var igv = (function (igv) {
             nameValues.push("<hr>");
             nameValues.push({ name: 'First in Pair', value: !this.isSecondOfPair(), borderTop: true });
             nameValues.push({ name: 'Mate is Mapped', value: yesNo(this.isMateMapped()) });
-            if (this.isMapped()) {
+            if (this.isMateMapped()) {
                 nameValues.push({ name: 'Mate Chromosome', value: this.mate.chr });
                 nameValues.push({ name: 'Mate Start', value: (this.mate.position + 1)});
                 nameValues.push({ name: 'Mate Strand', value: (true === this.mate.strand ? '(+)' : '(-)')});

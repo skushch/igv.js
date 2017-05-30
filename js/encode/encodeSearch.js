@@ -31,138 +31,172 @@
  * Support functions for the Encode rest api  https://www.encodeproject.org/help/rest-api/
  */
 
-var igv = (function (igv) {
+var encode = (function (encode) {
 
-    var query1 = "https://www.encodeproject.org/search/?" +
-        "type=experiment&" +
-        "files.file_format=bed&" +
-        "format=json&" +
-        "limit=all&" +
-        "field=replicates.library.biosample.donor.organism.name&" +
-        "field=lab.title&field=biosample_term_name&" +
-        "field=assay_term_name&" +
-        "field=target.label&" +
-        "field=files.file_format&" +
-        "field=files.output_type&" +
-        "field=files.href&" +
-        "field=files.replicate.technical_replicate_number&" +
-        "field=files.replicate.biological_replicate_number";
+    // var query1 = "https://www.encodeproject.org/search/?" +
+    //     "type=experiment&" +
+    //     "files.file_format=bed&" +
+    //     "format=json&" +
+    //     "limit=all&" +
+    //     "field=replicates.library.biosample.donor.organism.name&" +
+    //     "field=lab.title&field=biosample_term_name&" +
+    //     "field=assay_term_name&" +
+    //     "field=target.label&" +
+    //     "field=files.file_format&" +
+    //     "field=files.output_type&" +
+    //     "field=files.href&" +
+    //     "field=files.replicate.technical_replicate_number&" +
+    //     "field=files.replicate.biological_replicate_number";
 
-    var query2 = "https://www.encodeproject.org/search/?" +
-        "type=experiment&" +
-            // "assembly=hg19&" +
-        "files.output_type=peaks&" +
-        "files.file_format=bed&" +
-        "format=json&" +
-        "field=lab.title&" +
-        "field=biosample_term_name&" +
-        "field=assay_term_name&" +
-        "field=target.label&" +
-        "field=files.file_format&" +
-        "field=files.output_type&" +
-        "field=files.href&" +
-        "field=files.replicate.technical_replicate_number&" +
-        "field=files.replicate.biological_replicate_number&" +
-        "field=files.assembly&" +
-        "limit=all";
+    const fileFormat = "bigWig";
 
-    igv.encodeSearch = function (continuation) {
+    // var query3 = "https://www.encodeproject.org/search/?" +
+    //     "type=File" +
+    //     "&assembly=hg19" +
+    //     "&status=released" +
+    //     "&file_format=bigWig" +
+    //     "&output_type=signal+p-value" +
+    //     "&output_type=fold+change+over+control" +
+    //     "&award.project=ENCODE&" +
+    //     "format=json&" +
+    //     "limit=all";
 
-        igvxhr.loadJson(query2, {}).then(function (json) {
+    encode.encodeSearch = function (assembly, continuation) {
 
-            var columns = ["Assembly", "Cell Type", "Target", "Assay Type", "Bio Rep", "Tech Rep", "Lab"],
-                columnWidths = [8, 20, 10, 10, 8, 8, 40],
+        var query2 = "https://www.encodeproject.org/search/?" +
+            "type=experiment&" +
+            "assembly=" + assembly + "&" +
+            //"assay_title=ChIP-seq&" +
+            //  "files.output_type=peaks&" +
+            "files.file_format=" + fileFormat + "&" +
+            "format=json&" +
+            "field=lab.title&" +
+            "field=biosample_term_name&" +
+            "field=assay_term_name&" +
+            "field=target.label&" +
+            "field=files.file_format&" +
+            "field=files.output_type&" +
+            "field=files.href&" +
+            "field=files.replicate.technical_replicate_number&" +
+            "field=files.replicate.biological_replicate_number&" +
+            "field=files.assembly&" +
+            "limit=all";
+
+
+        console.log('encode search - load json - assembly(' + assembly + ') ...');
+        igvxhr
+            .loadJson(query2, {})
+            .then(function (json) {
+
+                var columnFormat,
+                    rows;
+
+                console.log('' +
+                    '... done');
+
+                console.log('parse/sort json ...');
+
                 rows = [];
+                _.each(json["@graph"], function (record) {
 
-            json["@graph"].forEach(function (record) {
-
-                var assayType = record.assay_term_name,
-                    experimentId = record["@id"],
-                    cellType = record["biosample_term_name"] || "",
-                    target = record.target ? record.target.label : "",
-                    lab = record.lab ? record.lab.title : "";
+                    var cellType,
+                        target,
+                        filtered,
+                        mapped;
 
 
-                record.files.forEach(function (file) {
+                    cellType = record["biosample_term_name"] || '';
 
-                    if (file.file_format === "bed") {
+                    target = record.target ? record.target.label : '';
 
-                        var format = file.file_format,
-                            type = file.output_type,
-                            bioRep = file.replicate ? file.replicate.bioligcal_replicate_number : undefined,
+                    filtered = _.filter(record.files, function (file) {
+                        return fileFormat === file.file_format && assembly === file.assembly;
+                    });
+
+                    mapped = _.map(filtered, function (file) {
+
+                        var bioRep = file.replicate ? file.replicate.bioligcal_replicate_number : undefined,
                             techRep = file.replicate ? file.replicate.technical_replicate_number : undefined,
-                            name = cellType + " " + target,
-                            assembly = file.assembly;
-                        if (bioRep) name += " " + bioRep;
-                        if (techRep) name += (bioRep ? ":" : "0:") + techRep;
+                            name = cellType + " " + target;
 
-                        rows.push({
-                            "Assembly": assembly,
-                            "ExperimentID": experimentId,
+                        if (bioRep) {
+                            name += " " + bioRep;
+                        }
+
+                        if (techRep) {
+                            name += (bioRep ? ":" : "0:") + techRep;
+                        }
+
+                        return {
+                            "Assembly": file.assembly,
+                            "ExperimentID": record['@id'],
                             "Cell Type": cellType,
-                            "Assay Type": assayType,
+                            "Assay Type": record.assay_term_name,
                             "Target": target,
-                            "Lab": lab,
-                            "Format": format,
-                            "Type": type,
+                            "Lab": record.lab ? record.lab.title : "",
+                            "Format": file.file_format,
+                            "Output Type": file.output_type,
                             "url": "https://www.encodeproject.org" + file.href,
                             "Bio Rep": bioRep,
                             "Tech Rep": techRep,
                             "Name": name
-                        });
-                    }
+                        };
+
+                    });
+
+                    Array.prototype.push.apply(rows, mapped);
+
                 });
 
-            });
+                rows.sort(function (a, b) {
+                    var a1 = a["Assembly"],
+                        a2 = b["Assembly"],
+                        ct1 = a["Cell Type"],
+                        ct2 = b["Cell Type"],
+                        t1 = a["Target"],
+                        t2 = b["Target"];
 
-            rows.sort(function (a, b) {
-                var a1 = a["Assembly"],
-                    a2 = b["Assembly"],
-                    ct1 = a["Cell Type"],
-                    ct2 = b["Cell Type"],
-                    t1 = a["Target"],
-                    t2 = b["Target"];
-
-                if (a1 === a2) {
-                    if (ct1 === ct2) {
-                        if (t1 === t2) {
-                            return 0;
+                    if (a1 === a2) {
+                        if (ct1 === ct2) {
+                            if (t1 === t2) {
+                                return 0;
+                            }
+                            else if (t1 < t2) {
+                                return -1;
+                            }
+                            else {
+                                return 1;
+                            }
                         }
-                        else if (t1 < t2) {
+                        else if (ct1 < ct2) {
                             return -1;
                         }
                         else {
                             return 1;
                         }
                     }
-                    else if (ct1 < ct2) {
-                        return -1;
-                    }
                     else {
-                        return 1;
+                        if (a1 < a2) {
+                            return -1;
+                        }
+                        else {
+                            return 1;
+                        }
                     }
-                }
-                else {
-                    if (a1 < a2) {
-                        return -1;
-                    }
-                    else {
-                        return 1;
-                    }
-                }
+                });
+
+                console.log('... done');
+
+                continuation({
+                    columns: [ 'Assembly', 'Cell Type', 'Target', 'Assay Type', 'Output Type', 'Lab' ],
+                    rows: rows
+                });
+
             });
 
-            continuation({
-                columns: columns,
-                columnWidths: columnWidths,
-                rows: rows
-            });
-
-        });
-
-    }
+    };
 
 
-    return igv;
+    return encode;
 })
-(igv || {});
+(encode || {});

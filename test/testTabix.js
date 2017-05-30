@@ -1,4 +1,6 @@
-function tabixTests() {
+function runTabixTests() {
+
+    var dataURL = "https://data.broadinstitute.org/igvdata/test/data/"
 
 
     asyncTest("blocksForRange", function () {
@@ -6,15 +8,17 @@ function tabixTests() {
         var refID = 14,
             beg = 24375199,
             end = 24378544,
-            indexPath = "data/tabix/TSVC.vcf.gz.tbi",
+            indexPath =  dataURL + "tabix/TSVC.vcf.gz.tbi",
             config = {};
 
-        igv.loadBamIndex(indexPath, config, function (bamIndex) {
+        igv.loadBamIndex(indexPath, config, true).then(function (bamIndex) {
 
-ok(bamIndex);
+            ok(bamIndex);
             start();
-        },
-        true);
+        }).catch(function (error) {
+            ok(false);
+            console.log(error);
+        });
 
     });
 

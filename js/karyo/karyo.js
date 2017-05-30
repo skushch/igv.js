@@ -29,32 +29,49 @@ var igv = (function (igv) {
         // if (console) console.log("karyo: " + txt);
     };
 
-    igv.KaryoPanel = function (parentElement) {
+    igv.KaryoPanel = function ($parent, config) {
+        var self = this,
+            contentDiv,
+            canvas,
+            tipCtx,
+            tipCanvas;
+
+        this.$container = $('<div class="igv-karyo-div">');
+        $parent.append(this.$container);
+
+        if (true === config.showKaryo) {
+            this.$container.show();
+        } else {
+            this.$container.hide();
+        }
+
+        this.$karyoPanelToggle = igv.makeToggleButton('Karyotype Panel', 'Karyotype Panel', 'showKaryo', function () {
+            return self.$container;
+        }, undefined);
 
         this.ideograms = null;
         igv.guichromosomes = [];
 
-        this.div = $('<div class="igv-karyo-div"></div>')[0];
-        $(parentElement).append(this.div);
+        contentDiv = $('<div class="igv-karyo-content-div"></div>')[0];
+        this.$container.append(contentDiv);
 
-        var contentDiv = $('<div class="igv-karyo-content-div"></div>')[0];
-        $(this.div).append(contentDiv);
-
-        var canvas = $('<canvas class="igv-karyo-canvas"></canvas>')[0];
+        canvas = $('<canvas class="igv-karyo-canvas"></canvas>')[0];
         $(contentDiv).append(canvas);
         canvas.setAttribute('width', contentDiv.offsetWidth);
         canvas.setAttribute('height', contentDiv.offsetHeight);
+
         this.canvas = canvas;
         this.ctx = canvas.getContext("2d");
 
-        var tipCanvas = document.createElement('canvas');
+        tipCanvas = document.createElement('canvas');
         tipCanvas.style.position = 'absolute';    // => relative to first positioned ancestor
         tipCanvas.style.width = "100px";
         tipCanvas.style.height = "20px";
         tipCanvas.style.left = "-2000px";
         tipCanvas.setAttribute('width', "100px");    //Must set the width & height of the canvas
         tipCanvas.setAttribute('height', "20px");
-        var tipCtx = tipCanvas.getContext("2d");
+
+        tipCtx = tipCanvas.getContext("2d");
         contentDiv.appendChild(tipCanvas);
 
         this.canvas.onmousemove = function (e) {
@@ -88,7 +105,8 @@ var igv = (function (igv) {
             if (!hit) {
                 tipCanvas.style.left = "-2000px";
             }
-        }
+        };
+
         this.canvas.onclick = function (e) {
 
             var mouseCoords = igv.translateMouseCoordinates(e, canvas);
@@ -106,9 +124,12 @@ var igv = (function (igv) {
             var g = igv.guichromosomes[i];
             if (g.x < mouseX && g.right > mouseX && g.y < mouseY && g.bottom > mouseY) {
                 var dy = mouseY - g.y;
-                var bp = Math.round(g.size * dy / g.h);
-                log("Going to position " + bp);
-                igv.browser.goto(g.name, bp);
+                var center = Math.round(g.size * dy / g.h);
+                log("Going to position " + center);
+
+                // the goto() signature is chr, start, end. We leave end undefined changing
+                // the interpretation of start to the center of the locus extent.
+                igv.browser.goto(g.name, center, undefined);
                 break;
             }
         }
@@ -118,28 +139,68 @@ var igv = (function (igv) {
 
     igv.KaryoPanel.prototype.resize = function () {
 
-        var canvas = this.canvas;
+        var canvas;
+
+        if (undefined === igv.browser.genomicStateList) {
+            console.log('karyo - resize: undefined === igv.browser.genomicStateList. Bail.');
+            return;
+        }
+
+        // if (_.size(igv.browser.genomicStateList) > 1) {
+        //     return;
+        // }
+
+        canvas = this.canvas;
         canvas.setAttribute('width', canvas.clientWidth);    //Must set the width & height of the canvas
         canvas.setAttribute('height', canvas.clientHeight);
         log("Resize called: width=" + canvas.clientWidth + "/" + canvas.clientHeight);
         this.ideograms = undefined;
         this.repaint();
-    }
+    };
 
     igv.KaryoPanel.prototype.repaint = function () {
 
+        if(this.canvasWidth === undefined|| this.canvasHeight === undefined) return;
 
-        var genome = igv.browser.genome,
-            referenceFrame = igv.browser.referenceFrame,
-            stainColors = [],
-            w = this.canvas.width,
-            h = this.canvas.height;
+        var genome,
+            genomicState,
+            referenceFrame,
+            stainColors,
+            w,
+            h;
+
+
+        if (undefined === igv.browser.genomicStateList) {
+            console.log('karyo - repaint: undefined === igv.browser.genomicStateList. Bail');
+            return;
+        }
+
+        // if (_.size(igv.browser.genomicStateList) > 1) {
+        //     return;
+        // }
+
+        genome = igv.browser.genome;
+
+        if(!genome.ideograms) {
+            console.log('karyo - no ideograms defined')
+            return;
+        }
+
+
+        genomicState = _.first(igv.browser.genomicStateList);
+        referenceFrame = genomicState.referenceFrame;
+        stainColors = [];
+        w = this.canvas.width;
+        h = this.canvas.height;
+
 
         this.ctx.clearRect(0, 0, w, h);
 
-        if (!(genome && referenceFrame && genome.chromosomes && referenceFrame.chr)) return;
+        if (!(genome && referenceFrame && genome.chromosomes && referenceFrame.chrName)) {
+            return;
+        }
 
-        var chromosomes = genome.getChromosomes();
+        var chromosomes = genome.chromosomes;
         var image = this.ideograms;
 
 
@@ -162,6 +223,8 @@ var igv = (function (igv) {
         var longestChr = genome.getLongestChromosome();
         var cytobands = genome.getCytobands(longestChr.name);      // Longest chr
 
+        if(!cytobands) return;    // Cytobands not defined.
+
         var me = this;
         var maxLen = cytobands[cytobands.length - 1].end;
 
@@ -175,7 +238,7 @@ var igv = (function (igv) {
         this.ctx.save();
 
         // Translate chr to official name
-        var chr = referenceFrame.chr;
+        var chr = referenceFrame.chrName;
         if (this.genome) {
             chr = this.genome.getChromosomeName(chr);
         }
@@ -184,9 +247,9 @@ var igv = (function (igv) {
             var ideoScale = longestChr.bpLength / chrheight;   // Scale in bp per pixels
 
             var boxPY1 = chromosome.y - 3 + Math.round(referenceFrame.start / ideoScale);
-            var boxHeight = Math.max(3, (igv.browser.trackViewportWidth() * referenceFrame.bpPerPixel) / ideoScale);
+            var boxHeight = Math.max(3, ((igv.browser.viewportContainerWidth()/genomicState.locusCount) * referenceFrame.bpPerPixel) / ideoScale);
 
-            //var boxPY2 = Math.round((this.browser.referenceFrame.start+100) * ideoScale);
+            //var boxPY2 = Math.round((referenceFrame.start+100) * ideoScale);
             this.ctx.strokeStyle = "rgb(150, 0, 0)";
             this.ctx.lineWidth = 2;
             this.ctx.strokeRect(chromosome.x - 3, boxPY1, chrwidth + 6, boxHeight + 6);
@@ -248,7 +311,7 @@ var igv = (function (igv) {
                             nr = 0;
                             for (chr in chromosomes) {
                                 var guichrom = igv.guichromosomes[nr];
-                                //if (nr > 1) break;                       
+                                //if (nr > 1) break;
                                 nr++;
                                 if (guichrom && guichrom.size) {
                                     loadfeatures(source, chr, 0, guichrom.size, guichrom, bufferCtx, tracknr);
@@ -426,7 +489,7 @@ var igv = (function (igv) {
         }
 
         function loadfeatures(source, chr, start, end, guichrom, bufferCtx, tracknr) {
-            //log("=== loadfeatures of chr " + chr + ", x=" + guichrom.x);            
+            //log("=== loadfeatures of chr " + chr + ", x=" + guichrom.x);
 
             source.getSummary(chr, start, end, function (featureList) {
                 if (featureList) {
@@ -442,7 +505,7 @@ var igv = (function (igv) {
 
         }
 
-    }
+    };
 
     return igv;
 })

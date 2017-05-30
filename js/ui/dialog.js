@@ -28,16 +28,14 @@
  */
 var igv = (function (igv) {
 
-    igv.Dialog = function ($parent, constructorHelper, id) {
+    igv.Dialog = function ($parent, constructorHelper) {
 
         var self = this,
             $header,
             $headerBlurb;
 
         this.$container = $('<div class="igv-grid-container-dialog">');
-        if (id) {
-            this.$container.attr("id", id);
-        }
+
         $parent.append( this.$container[ 0 ] );
 
         $header = $('<div class="igv-grid-header">');
@@ -48,7 +46,7 @@ var igv = (function (igv) {
 
         constructorHelper(this);
 
-        igv.dialogCloseWithParentObject($header, function () {
+        igv.attachDialogCloseHandlerWithParent($header, function () {
             self.hide();
         });
 
@@ -63,19 +61,6 @@ var igv = (function (igv) {
         dialog.$container.append(dialog.rowOfOkCancel()[ 0 ]);
 
         dialog.$container.draggable();
-
-    };
-
-    igv.Dialog.alertConstructor = function (dialog) {
-
-        dialog.$container.removeClass("igv-grid-container-dialog");
-        dialog.$container.addClass("igv-grid-container-alert-dialog");
-
-        dialog.$container.append(dialog.rowOfLabel()[ 0 ]);
-
-        dialog.$container.append(dialog.rowOfInput()[ 0 ]);
-
-        dialog.$container.append(dialog.rowOfOk()[ 0 ]);
 
     };
 
@@ -226,7 +211,14 @@ var igv = (function (igv) {
             self.$dialogInput.val(inputValue);
 
             self.$dialogInput.unbind();
-            self.$dialogInput.change(clickFunction);
+            self.$dialogInput.change(function(){
+
+                if (clickFunction) {
+                    clickFunction();
+                }
+
+                self.hide();
+            });
 
             self.$dialogInput.show();
         } else {

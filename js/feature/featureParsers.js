@@ -46,7 +46,9 @@ var igv = (function (igv) {
 
         var customFormat;
 
-        this.format = format;
+        if (format !== undefined) {
+            this.format = format.toLowerCase();
+        }
         this.nameField = config ? config.nameField : undefined;
         this.skipRows = 0;   // The number of fixed header rows to skip.  Override for specific types as needed
 
@@ -54,10 +56,9 @@ var igv = (function (igv) {
             this.decode = decode;
         }
 
-
-        switch (format) {
-            case "narrowPeak":
-            case "broadPeak":
+        switch (this.format) {
+            case "narrowpeak":
+            case "broadpeak":
             case "peaks":
                 this.decode = decodePeak;
                 this.delimiter = /\s+/;
@@ -80,23 +81,36 @@ var igv = (function (igv) {
                 this.decode = decodeAneu;
                 this.delimiter = "\t";
                 break;
-            case "FusionJuncSpan":
+            case "fusionjuncspan":
                 // bhaas, needed for FusionInspector view
                 this.decode = decodeFusionJuncSpan;
                 this.delimiter = /\s+/;
                 break;
-            case "gtexGWAS":
+            case "gtexgwas":
                 this.skipRows = 1;
                 this.decode = decodeGtexGWAS;
                 this.delimiter = "\t";
                 break;
             case "refflat":
-                this.decode = decodeRefflat;
-                this.delimiter = "\t";
+                this.decode = decodeReflat;
+                this.delimiter = /\s+/;
+                break;
+            case "genepred":
+                this.decode = decodeGenePred;
+                this.delimiter = /\s+/;
+                break;
+            case "genepredext":
+                this.decode = decodeGenePredExt;
+                this.delimiter = /\s+/;
+                break;
+            case "refgene":
+                this.decode = decodeGenePredExt;
+                this.delimiter = /\s+/;
+                this.shift = 1;
                 break;
             default:
 
-                customFormat = igv.browser.getFormat(format);
+                customFormat = igv.getFormat(format);
                 if (customFormat !== undefined) {
                     this.decode = decodeCustom;
                     this.format = customFormat;
@@ -173,7 +187,9 @@ var igv = (function (igv) {
             }
 
             tokens = lines[i].split(delimiter);
-            if (tokens.length < 1) continue;
+            if (tokens.length < 1) {
+                continue;
+            }
 
             feature = decode.call(this, tokens, wig);
 
@@ -266,7 +282,7 @@ var igv = (function (igv) {
         var chr, start, end, id, name, tmp, idName, exonCount, exonSizes, exonStarts, exons, exon, feature,
             eStart, eEnd;
 
-        if (tokens.length < 3) return null;
+        if (tokens.length < 3) return undefined;
 
         chr = tokens[0];
         start = parseInt(tokens[1]);
@@ -340,28 +356,113 @@ var igv = (function (igv) {
     }
 
     /**
-     * Decode a UCSC "refflat" record
+     * Decode a UCSC "genePred" record.
+     *
      * @param tokens
      * @param ignore
      * @returns {*}
      */
-    function decodeRefflat(tokens, ignore) {
+    function decodeGenePred(tokens, ignore) {
 
-        if (tokens.length < 10) return null;
+        var shift = this.shift === undefined ? 0 : 1;
+
+        if(tokens.length < 9 + shift) return undefined;
 
         var feature = {
-                chr: tokens[2],
-                start: parseInt(tokens[4]),
-                end: parseInt(tokens[5]),
-                id: tokens[0],
-                name: tokens[1],
-                strand: tokens[3],
-                cdStart: parseInt(tokens[6]),
-                cdEnd: parseInt(tokens[7])
+                name: tokens[0 + shift],
+                chr: tokens[1 + shift],
+                strand: tokens[2 + shift],
+                start: parseInt(tokens[3 + shift]),
+                end: parseInt(tokens[4 + shift]),
+                cdStart: parseInt(tokens[5 + shift]),
+                cdEnd: parseInt(tokens[6 + shift]),
+                id: tokens[0 + shift]
             },
-            exonCount = parseInt(tokens[8]),
-            exonStarts = tokens[9].split(','),
-            exonEnds = tokens[10].split(','),
+            exonCount = parseInt(tokens[7 + shift]),
+            exonStarts = tokens[8 + shift].split(','),
+            exonEnds = tokens[9 + shift].split(','),
+            exons = [];
+
+        for (var i = 0; i < exonCount; i++) {
+            exons.push({start: parseInt(exonStarts[i]), end: parseInt(exonEnds[i])});
+        }
+
+        feature.exons = exons;
+
+        feature.popupData = function () {
+            return [{name: "Name", value: feature.name}];
+        };
+
+        return feature;
+
+    }
+    /**
+     * Decode a UCSC "genePredExt" record.  refGene files are in this format.
+     *
+     * @param tokens
+     * @param ignore
+     * @returns {*}
+     */
+    function decodeGenePredExt(tokens, ignore) {
+
+        var shift = this.shift === undefined ? 0 : 1;
+
+        if(tokens.length < 11 + shift) return undefined;
+
+        var feature = {
+                name: tokens[11 + shift],
+                chr: tokens[1 + shift],
+                strand: tokens[2 + shift],
+                start: parseInt(tokens[3 + shift]),
+                end: parseInt(tokens[4 + shift]),
+                cdStart: parseInt(tokens[5 + shift]),
+                cdEnd: parseInt(tokens[6 + shift]),
+                id: tokens[0 + shift]
+            },
+            exonCount = parseInt(tokens[7 + shift]),
+            exonStarts = tokens[8 + shift].split(','),
+            exonEnds = tokens[9 + shift].split(','),
+            exons = [];
+
+        for (var i = 0; i < exonCount; i++) {
+            exons.push({start: parseInt(exonStarts[i]), end: parseInt(exonEnds[i])});
+        }
+
+        feature.exons = exons;
+
+        feature.popupData = function () {
+            return [{name: "Name", value: feature.name}];
+        };
+
+        return feature;
+
+    }
+
+    /**
+     * Decode a UCSC "refFlat" record
+     * @param tokens
+     * @param ignore
+     * @returns {*}
+     */
+    function decodeReflat(tokens, ignore) {
+
+        var shift = this.shift === undefined ? 0 : 1;
+
+        if(tokens.length < 10 + shift) return undefined;
+
+        var feature = {
+                name: tokens[0 + shift],
+                id: tokens[1 + shift],
+                chr: tokens[2 + shift],
+                strand: tokens[3 + shift],
+                start: parseInt(tokens[4 + shift]),
+                end: parseInt(tokens[5 + shift]),
+                cdStart: parseInt(tokens[6 + shift]),
+                cdEnd: parseInt(tokens[7 + shift])
+            },
+            exonCount = parseInt(tokens[8 + shift]),
+            exonStarts = tokens[9 + shift].split(','),
+            exonEnds = tokens[10 + shift].split(','),
             exons = [];
 
         for (var i = 0; i < exonCount; i++) {

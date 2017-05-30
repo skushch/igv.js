@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <link rel="shortcut icon" href=../img/favicon.ico>
+    <title>IGV - Dev</title>
+    <link rel="import" href="./shared-css.html">
+    <link rel="import" href="./shared-js.html">
+    <script src="../js/oauth/google.js"></script>
+</head>
+
+<body>
+
+<div id="myDiv" style="padding-top: 50px;padding-bottom: 20px; height: auto">
+
+    <h3>Example tracks - click to load</h3>
+
+    <div id="trackList">
+
+        <div onclick="igv.browser.loadTrack({
+                            url: 'https://data.broadinstitute.org/igvdata/test/data/vcf/HipSTR/str_calls_paired.vcf.gz',
+                            name: 'STR call paired',
+                            visibilityWindow: 10000000,
+                            height: 500
+                        })"> STR call paired
+        </div>
+
+        <div onclick="igv.browser.loadTrack({
+                            url: 'https://data.broadinstitute.org/igvdata/test/data/vcf/HipSTR/str_calls_paired_v2.vcf.gz',
+                            name: 'STR call paired v2',
+                            visibilityWindow: 10000000,
+                            height: 500
+                        })"> STR call paired v2
+        </div>
+        <div onclick="igv.browser.loadTrack({
+                            url: 'https://data.broadinstitute.org/igvdata/test/data/vcf/HipSTR/str_calls_unpaired.vcf.gz',
+                            name: 'STR call unpaired',
+                            visibilityWindow: 10000000,
+                            height: 500
+                        })"> STR call unpaired
+        </div>
+
+    </div>
+
+</div>
+
+<script type="text/javascript">
+
+
+    $(document).ready(function () {
+        var div,
+                options,
+                browser;
+
+        div = $("#myDiv")[0];
+        options = {
+            reference: {
+                id: "hg19",
+                fastaURL: "https://s3.amazonaws.com/igv.broadinstitute.org/genomes/seq/1kg_v37/human_g1k_v37_decoy.fasta",
+                cytobandURL: "https://s3.amazonaws.com/igv.broadinstitute.org/genomes/seq/b37/b37_cytoband.txt"
+            },
+            locus: "chr13:82,722,043-82,722,343",
+            tracks:
+                    [
+                        {
+                            name: "Genes",
+                            searchable: false,
+                            type: "annotation",
+                            format: "gtf",
+                            sourceType: "file",
+                            url: "https://s3.amazonaws.com/igv.broadinstitute.org/annotations/hg19/genes/gencode.v18.annotation.sorted.gtf.gz",
+                            indexURL: "https://s3.amazonaws.com/igv.broadinstitute.org/annotations/hg19/genes/gencode.v18.annotation.sorted.gtf.gz.tbi",
+                            visibilityWindow: 10000000,
+                            order: Number.MAX_VALUE,
+                            displayMode: "EXPANDED"
+                        }
+
+                    ]
+        };
+
+        browser = igv.createBrowser(div, options);
+
+    })
+
+
+</script>
+
+</body>
+
+</html>

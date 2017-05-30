@@ -249,17 +249,21 @@ var igv = (function (igv) {
 
     };
 
+    igv.VariantTrack.prototype.popupDataWithConfiguration = function (config) {
+        return this.popupData(config.genomicLocation, config.x, config.y, config.viewport.genomicState.referenceFrame)
+    };
+
     /**
      * Return "popup data" for feature @ genomic location.  Data is an array of key-value pairs
      */
-    igv.VariantTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset) {
+    igv.VariantTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset, referenceFrame) {
 
         // We use the featureCache property rather than method to avoid async load.  If the
         // feature is not already loaded this won't work,  but the user wouldn't be mousing over it either.
         if (this.featureSource.featureCache) {
 
-            var chr = igv.browser.referenceFrame.chr,  // TODO -- this should be passed in
-                tolerance = Math.floor(2 * igv.browser.referenceFrame.bpPerPixel),  // We need some tolerance around genomicLocation, start with +/- 2 pixels
+            var chr = referenceFrame.chrName,
+                tolerance = Math.floor(2 * referenceFrame.bpPerPixel),  // We need some tolerance around genomicLocation, start with +/- 2 pixels
                 featureList = this.featureSource.featureCache.queryFeatures(chr, genomicLocation - tolerance, genomicLocation + tolerance),
                 popupData = [],
                 self = this;
@@ -310,7 +314,8 @@ var igv = (function (igv) {
 
     /**
      * Default popup text function -- just extracts string and number properties in random order.
-     * @param feature
+     * @param call
+     * @param variant
      * @returns {Array}
      */
     function extractPopupData(call, variant) {
@@ -346,40 +351,86 @@ var igv = (function (igv) {
         return popupData;
     }
 
-    igv.VariantTrack.prototype.popupMenuItems = function (popover) {
+    igv.VariantTrack.prototype.menuItemList = function (popover) {
 
-        var myself = this,
+        var self = this,
             menuItems = [],
-            lut = {"COLLAPSED": "Collapse", "SQUISHED": "Squish", "EXPANDED": "Expand"},
-            checkMark = '<i class="fa fa-check fa-check-shim"></i>',
-            checkMarkNone = '<i class="fa fa-check fa-check-shim fa-check-hidden"></i>',
-            trackMenuItem = '<div class=\"igv-track-menu-item\">',
-            trackMenuItemFirst = '<div class=\"igv-track-menu-item igv-track-menu-border-top\">';
+            mapped;
 
         menuItems.push(igv.colorPickerMenuItem(popover, this.trackView));
 
-        ["COLLAPSED", "SQUISHED", "EXPANDED"].forEach(function (displayMode, index) {
-
-            var chosen,
-                str;
-
-            chosen = (0 === index) ? trackMenuItemFirst : trackMenuItem;
-            str = (displayMode === myself.displayMode) ? chosen + checkMark + lut[displayMode] + '</div>' : chosen + checkMarkNone + lut[displayMode] + '</div>';
-
-            menuItems.push({
-                object: $(str),
+        mapped = _.map(["COLLAPSED", "SQUISHED", "EXPANDED"], function(displayMode, index) {
+            return {
+                object: $(markupStringified(displayMode, index, self.displayMode)),
                 click: function () {
                     popover.hide();
-                    myself.displayMode = displayMode;
-                    myself.trackView.update();
+                    self.displayMode = displayMode;
+                    self.trackView.update();
                 }
-            });
-
+            };
         });
+
+        menuItems = menuItems.concat(mapped);
+
+        function markupStringified(displayMode, index, selfDisplayMode) {
+
+            var lut,
+                chosen;
+
+            lut =
+            {
+                "COLLAPSED": "Collapse",
+                "SQUISHED": "Squish",
+                "EXPANDED": "Expand"
+            };
+
+            chosen = (0 === index) ? '<div class="igv-track-menu-border-top">' : '<div>';
+            if (displayMode === selfDisplayMode) {
+                return chosen + '<i class="fa fa-check fa-check-shim"></i>' + lut[ displayMode ] + '</div>'
+            } else {
+                return chosen + '<i class="fa fa-check fa-check-shim fa-check-hidden"></i>' + lut[ displayMode ] + '</div>';
+            }
+
+        }
 
         return menuItems;
 
     };
+
+    //      igv.VariantTrack.prototype.menuItemList = function (popover) {
+    //
+    //     var myself = this,
+    //         menuItems = [],
+    //         lut = {"COLLAPSED": "Collapse", "SQUISHED": "Squish", "EXPANDED": "Expand"},
+    //         checkMark = '<i class="fa fa-check fa-check-shim"></i>',
+    //         checkMarkNone = '<i class="fa fa-check fa-check-shim fa-check-hidden"></i>',
+    //         trackMenuItem = '<div class=\"igv-track-menu-item\">',
+    //         trackMenuItemFirst = '<div class=\"igv-track-menu-item igv-track-menu-border-top\">';
+    //
+    //     menuItems.push(igv.colorPickerMenuItem(popover, this.trackView));
+    //
+    //     ["COLLAPSED", "SQUISHED", "EXPANDED"].forEach(function (displayMode, index) {
+    //
+    //         var chosen,
+    //             str;
+    //
+    //         chosen = (0 === index) ? trackMenuItemFirst : trackMenuItem;
+    //         str = (displayMode === myself.displayMode) ? chosen + checkMark + lut[displayMode] + '</div>' : chosen + checkMarkNone + lut[displayMode] + '</div>';
+    //
+    //         menuItems.push({
+    //             object: $(str),
+    //             click: function () {
+    //                 popover.hide();
+    //                 myself.displayMode = displayMode;
+    //                 myself.trackView.update();
+    //             }
+    //         });
+    //
+    //     });
+    //
+    //     return menuItems;
+    //
+    // };
 
 
     return igv;

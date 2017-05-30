@@ -36,9 +36,10 @@ var igv = (function (igv) {
         this.bufferedReader = new igv.BufferedReader(config);
     };
 
-    igv.BWSource.prototype.getFeatures = function (chr, bpStart, bpEnd) {
+    igv.BWSource.prototype.getFeatures = function (chr, bpStart, bpEnd, bpPerPixel) {
 
         var self = this;
+
         return new Promise(function (fulfill, reject) {
 
             self.reader.getZoomHeaders().then(function (zoomLevelHeaders) {
@@ -46,7 +47,6 @@ var igv = (function (igv) {
                 // Select a biwig "zoom level" appropriate for the current resolution
                 var bwReader = self.reader,
                     bufferedReader = self.bufferedReader,
-                    bpPerPixel = igv.browser.referenceFrame.bpPerPixel,
                     zoomLevelHeader = zoomLevelForScale(bpPerPixel, zoomLevelHeaders),
                     treeOffset,
                     decodeFunction;
@@ -103,13 +103,13 @@ var igv = (function (igv) {
 
                                 var i, allFeatures = featureArrays[0];
                                 if(featureArrays.length > 1) {
-                                   for(i=0; i<featureArrays.length; i++) {
+                                   for(i=1; i<featureArrays.length; i++) {
                                        allFeatures = allFeatures.concat(featureArrays[i]);
                                    }
-                                    allFeatures.sort(function (a, b) {
-                                        return a.start - b.start;
-                                    })
-                                }
+                                }  
+                                allFeatures.sort(function (a, b) {
+                                    return a.start - b.start;
+                                })
 
                                 fulfill(allFeatures)
                             }).catch(reject);
@@ -121,6 +121,18 @@ var igv = (function (igv) {
 
 
         });
+    }
+    
+    
+    igv.BWSource.prototype.getDefaultRange = function () {
+        
+        if(this.reader.totalSummary != undefined) {
+            return this.reader.totalSummary.defaultRange;
+        }
+        else {
+            return undefined;
+        }
+        
     }
 
 
@@ -144,8 +156,7 @@ var igv = (function (igv) {
 
         return (level && level.reductionLevel < 4 * bpPerPixel) ? level : null;
     }
-
-
+    
     function decodeWigData(data, chr, chrIdx, bpStart, bpEnd, featureArray) {
 
         var binaryParser = new igv.BinaryParser(data),
@@ -156,7 +167,7 @@ var igv = (function (igv) {
             itemSpan = binaryParser.getInt(),
             type = binaryParser.getByte(),
             reserved = binaryParser.getByte(),
-            itemCount = binaryParser.getShort(),
+            itemCount = binaryParser.getUShort(),
             value;
 
         if (chromId === chrIdx) {
@@ -170,7 +181,6 @@ var igv = (function (igv) {
                         value = binaryParser.getFloat();
                         break;
                     case 2:
-
                         chromStart = binaryParser.getInt();
                         value = binaryParser.getFloat();
                         chromEnd = chromStart + itemSpan;
@@ -185,7 +195,7 @@ var igv = (function (igv) {
 
                 if (chromStart >= bpEnd) {
                     break; // Out of interval
-                } else if (chromEnd > bpStart) {
+                } else if (chromEnd > bpStart && Number.isFinite(value)) {
                     featureArray.push({chr: chr, start: chromStart, end: chromEnd, value: value});
                 }
 
@@ -225,7 +235,7 @@ var igv = (function (igv) {
                 if (chromStart >= bpEnd) {
                     break; // Out of interval
 
-                } else if (chromEnd > bpStart) {
+                } else if (chromEnd > bpStart && Number.isFinite(value)) {
                     featureArray.push({chr: chr, start: chromStart, end: chromEnd, value: value});
                 }
 
@@ -233,8 +243,7 @@ var igv = (function (igv) {
         }
 
     }
-
-
+    
     function decodeBedData(data, chr, chrIdx, bpStart, bpEnd, featureArray) {
 
         var binaryParser = new igv.BinaryParser(data),

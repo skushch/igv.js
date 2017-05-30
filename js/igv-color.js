@@ -98,6 +98,18 @@ var igv = (function (igv) {
         return "rgb(" + r + "," + g + "," + b + ")";
     };
 
+    igv.randomRGBConstantAlpha = function (min, max, alpha) {
+
+        min = clamp(min, 0, 255);
+        max = clamp(max, 0, 255);
+
+        var r = Math.round(igv.random(min, max)).toString(10);
+        var g = Math.round(igv.random(min, max)).toString(10);
+        var b = Math.round(igv.random(min, max)).toString(10);
+
+        return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+    };
+
     igv.nucleotideColorComponents = {
         "A": [0, 200, 0],
         "C": [0, 0, 200],
@@ -143,13 +155,12 @@ var igv = (function (igv) {
 
 
     igv.createColorString = function (token) {
-        if (token.contains(",")) {
+        if (token.includes(",")) {
             return token.startsWith("rgb") ? token : "rgb(" + token + ")";
+        } else {
+            return undefined;
         }
-        else {
-            return token;
-        }
-    }
+    };
 
 
     // Color scale objects.  Implement a single method,  getColor(value)

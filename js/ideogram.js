@@ -4,13 +4,13 @@
  * Copyright (c) 2014 Broad Institute
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
+ * of panel software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in
+ * The above copyright notice and panel permission notice shall be included in
  * all copies or substantial portions of the Software.
  *
  *
@@ -29,136 +29,193 @@
 
 var igv = (function (igv) {
 
-    igv.IdeoPanel = function (parentElement) {
+    igv.IdeoPanel = function ($content_header) {
 
-        this.ideograms = {};
+        $content_header.append($('<div class="igv-ideogram-left-shim"></div>'));
+        this.buildPanels($content_header);
+    };
 
-        // ideogram content
-        this.contentDiv = $('<div class="igv-ideogram-content-div"></div>');
-        $(parentElement).append(this.contentDiv[0]);
+    igv.IdeoPanel.setWidth = function ($ideogram, width) {
+        var percentage;
 
-        var myself = this;
-        this.contentDiv.click(function (e) {
+        $ideogram.width(width);
+        percentage = $ideogram.width()/$ideogram.outerWidth();
+        $ideogram.width(Math.floor(percentage * width));
+    };
 
-            var xy,
-                xPercentage,
-                chr,
-                chrLength,
-                locusLength,
-                chrCoveragePercentage,
-                locus;
+    igv.IdeoPanel.prototype.buildPanels = function ($content_header) {
 
-            xy = igv.translateMouseCoordinates(e, myself.contentDiv);
-            xPercentage = xy.x / myself.contentDiv.width();
+        this.panels = _.map(igv.browser.genomicStateList, function(genomicState) {
 
-            locusLength = igv.browser.trackViewportWidthBP();
-            chr = igv.browser.genome.getChromosome(igv.browser.referenceFrame.chr);
-            chrLength = chr.bpLength;
-            chrCoveragePercentage = locusLength / chrLength;
+            var viewportContainerWidth = igv.browser.viewportContainerWidth(),
+                panel = {};
 
-            if (xPercentage - (chrCoveragePercentage/2.0) < 0) {
-                xPercentage = chrCoveragePercentage/2.0;
-                //return;
+            panel.genomicState = genomicState;
+
+            panel.$ideogram = $('<div class="igv-ideogram-content-div"></div>');
+
+            addBorders(panel.$ideogram, genomicState.locusIndex, genomicState.locusCount);
+
+            igv.IdeoPanel.setWidth(panel.$ideogram, viewportContainerWidth/genomicState.locusCount);
+
+            $content_header.append(panel.$ideogram);
+
+            panel.$canvas = $('<canvas>');
+            panel.$ideogram.append(panel.$canvas);
+
+            panel.$canvas.attr('width', panel.$ideogram.width());
+            panel.$canvas.attr('height', panel.$ideogram.height());
+
+            panel.ctx = panel.$canvas.get(0).getContext("2d");
+
+            panel.ideograms = {};
+
+            panel.$ideogram.on('click', function (e) {
+                igv.IdeoPanel.clickHandler(panel, e);
+            });
+
+            return panel;
+
+            function addBorders($ideogram, locusIndex, lociCount) {
+
+                if (1 === lociCount || locusIndex === lociCount - 1) {
+                    return;
+                }
+
+                $ideogram.addClass('igv-ideogram-content-div-border-right');
+
             }
-
-            if (xPercentage + (chrCoveragePercentage/2.0) > 1.0) {
-                xPercentage = 1.0 - chrCoveragePercentage/2.0;
-                //return;
-            }
-
-            locus = igv.browser.referenceFrame.chr + ":" + igv.numberFormatter(1 + Math.floor((xPercentage - (chrCoveragePercentage/2.0)) * chrLength)) + "-" + igv.numberFormatter(Math.floor((xPercentage + (chrCoveragePercentage/2.0)) * chrLength));
-            //console.log("chr length " + igv.numberFormatter(chrLength) + " locus " + locus);
-
-            igv.browser.search(locus, undefined);
 
         });
 
-        this.canvas = $('<canvas class="igv-ideogram-canvas"></canvas>')[0];
-        $(this.contentDiv).append(this.canvas);
-        this.canvas.setAttribute('width', this.contentDiv.width());
-        this.canvas.setAttribute('height', this.contentDiv.height());
-        this.ctx = this.canvas.getContext("2d");
+    };
 
+    igv.IdeoPanel.$empty = function ($content_header) {
+        var $a = $content_header.find('.igv-ideogram-content-div');
+        $a.remove();
+    };
+
+    igv.IdeoPanel.prototype.panelWithLocusIndex = function (locusIndex) {
+
+        var panels = _.filter(this.panels, function(panel){
+            return locusIndex === panel.genomicState.locusIndex;
+        });
+
+        return _.first(panels);
     };
 
     igv.IdeoPanel.prototype.resize = function () {
 
-        this.canvas.setAttribute('width', this.contentDiv.width());
-        this.canvas.setAttribute('height', this.contentDiv.height());
+        var viewportContainerWidth = igv.browser.syntheticViewportContainerWidth();
 
-        this.ideograms = {};
+        _.each(this.panels, function(panel, index) {
+            var genomicState = igv.browser.genomicStateList[ index ];
+            panel.$ideogram.width(Math.floor(viewportContainerWidth/genomicState.locusCount));
+            panel.$canvas.attr('width', panel.$ideogram.width());
+            panel.ideograms = {};
+        });
+
         this.repaint();
     };
 
     igv.IdeoPanel.prototype.repaint = function () {
 
+        _.each(this.panels, function(panel) {
+            igv.IdeoPanel.repaintPanel(panel);
+        })
+
+    };
+
+    igv.IdeoPanel.repaintPanel = function (panel) {
+
         try {
             var y,
                 image,
-                bufferCtx,
                 chromosome,
                 widthPercentage,
                 xPercentage,
+                canvasWidth,
+                canvasHeight,
                 width,
                 widthBP,
                 x,
                 xBP,
-                genome = igv.browser.genome,
-                referenceFrame = igv.browser.referenceFrame,
-                stainColors = [];
+                referenceFrame,
+                stainColors,
+                xx,
+                yy,
+                ww,
+                hh;
 
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-            if (!(genome && referenceFrame && genome.getChromosome(referenceFrame.chr))) {
+            referenceFrame = panel.genomicState.referenceFrame;
+            if (!(igv.browser.genome && referenceFrame && igv.browser.genome.getChromosome(referenceFrame.chrName))) {
                 return;
             }
 
-            image = this.ideograms[igv.browser.referenceFrame.chr];
-
-            if (!image) {
-
-                image = document.createElement('canvas');
-                image.width = this.canvas.width;
-                image.height = 13;
-
-                bufferCtx = image.getContext('2d');
-
-                drawIdeogram(bufferCtx, this.canvas.width, image.height);
-
-                this.ideograms[igv.browser.referenceFrame.chr] = image;
+            stainColors = [];
+            canvasWidth = panel.$canvas.width();
+            canvasHeight = panel.$canvas.height();
+            panel.ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            
+            if(referenceFrame.chrName.toLowerCase() === "all") {
+                return;
             }
 
-            y = (this.canvas.height - image.height) / 2.0;
-            this.ctx.drawImage(image, 0, y);
+            image = panel.ideograms[ referenceFrame.chrName ];
 
-            // Draw red box
-            this.ctx.save();
+            if (undefined === image) {
 
-            chromosome = igv.browser.genome.getChromosome(igv.browser.referenceFrame.chr);
+                image = document.createElement('canvas');
+                image.width = canvasWidth;
+                image.height = canvasHeight;
+                // image.height = 13;
 
-            widthBP = Math.floor(igv.browser.trackViewportWidthBP());
-                xBP = igv.browser.referenceFrame.start;
+                drawIdeogram(image.getContext('2d'), image.width, image.height);
+
+                panel.ideograms[ referenceFrame.chrName ] = image;
+            }
+
+            // y = (canvasHeight - image.height) / 2.0;
+            // panel.ctx.drawImage(image, 0, y);
+            y = 0;
+            panel.ctx.drawImage(image, 0, 0);
+
+            // panel.ctx.save();
+
+            chromosome = igv.browser.genome.getChromosome(referenceFrame.chrName);
+
+            widthBP = Math.round(referenceFrame.bpPerPixel * panel.$ideogram.width());
+            xBP = referenceFrame.start;
 
             if (widthBP < chromosome.bpLength) {
 
                 widthPercentage = widthBP/chromosome.bpLength;
-                    xPercentage =     xBP/chromosome.bpLength;
+                xPercentage =     xBP/chromosome.bpLength;
 
-                x =     Math.floor(    xPercentage * this.canvas.width);
-                width = Math.floor(widthPercentage * this.canvas.width);
-
-                //console.log("canvas end " + this.canvas.width + " xEnd " + (x + width));
+                x =     Math.floor(    xPercentage * panel.$canvas.width());
+                width = Math.floor(widthPercentage * panel.$canvas.width());
 
                 x = Math.max(0, x);
-                x = Math.min(this.canvas.width - width, x);
+                x = Math.min(canvasWidth - width, x);
 
-                this.ctx.strokeStyle = "red";
-                this.ctx.lineWidth = 2;
-                this.ctx.strokeRect(x, y, width, image.height + this.ctx.lineWidth - 1);
-                this.ctx.restore();
+                // Push current context
+                panel.ctx.save();
+
+                // Draw red box
+                panel.ctx.strokeStyle = "red";
+                panel.ctx.lineWidth = (width < 2) ? 1 : 2;
+
+                xx = x + (panel.ctx.lineWidth)/2;
+                ww = (width < 2) ? 1 : width - panel.ctx.lineWidth;
+
+                yy = y + (panel.ctx.lineWidth)/2;
+                hh = image.height - panel.ctx.lineWidth;
+
+                panel.ctx.strokeRect(xx, yy, ww, hh);
+
+                // Pop current context
+                panel.ctx.restore();
             }
-
-            //this.chromosomeNameLabel.innerHTML = referenceFrame.chr;
 
         } catch (e) {
             console.log("Error painting ideogram: " + e.message);
@@ -166,11 +223,14 @@ var igv = (function (igv) {
 
         function drawIdeogram(bufferCtx, ideogramWidth, ideogramHeight) {
 
-            var ideogramTop = 0;
+            var shim = 1,
+                ideogramTop = 0;
 
-            if (!genome) return;
+            if (!igv.browser.genome) {
+                return;
+            }
 
-            var cytobands = genome.getCytobands(referenceFrame.chr);
+            var cytobands = igv.browser.genome.getCytobands(referenceFrame.chrName);
 
             if (cytobands) {
 
@@ -180,7 +240,9 @@ var igv = (function (igv) {
                 var yC = [];
 
                 var len = cytobands.length;
-                if (len == 0) return;
+                if (len == 0) {
+                    return;
+                }
 
                 var chrLength = cytobands[len - 1].end;
 
@@ -212,32 +274,36 @@ var igv = (function (igv) {
                                 xC[2] = start;
                                 yC[2] = center;
                             }
-                            bufferCtx.fillStyle = "rgb(150, 0, 0)"; //g2D.setColor(Color.RED.darker());
-                            bufferCtx.strokeStyle = "rgb(150, 0, 0)"; //g2D.setColor(Color.RED.darker());
+
+                            bufferCtx.fillStyle = "rgb(150, 0, 0)";
+                            bufferCtx.strokeStyle = "rgb(150, 0, 0)";
                             bufferCtx.polygon(xC, yC, 1, 0);
-                            // g2D.fillPolygon(xC, yC, 3);
+
                         } else {
 
-                            bufferCtx.fillStyle = getCytobandColor(cytoband); //g2D.setColor(getCytobandColor(cytoband));
-                            bufferCtx.fillRect(start, ideogramTop, (end - start), ideogramHeight);
-                            // context.fillStyle = "Black"; //g2D.setColor(Color.BLACK);
-                            // context.strokeRect(start, y, (end - start), height);
+                            bufferCtx.fillStyle = getCytobandColor(stainColors, cytoband);
+
+                            // fillRect: function (ctx, x, y, w, h, properties)
+
+                            // bufferCtx.fillRect(start, ideogramTop, (end - start), ideogramHeight);
+                            bufferCtx.fillRect(start, shim + ideogramTop, (end - start), ideogramHeight - 2*shim);
                         }
                     }
                 }
             }
             bufferCtx.strokeStyle = "black";
-            bufferCtx.roundRect(0, ideogramTop, ideogramWidth, ideogramHeight, ideogramHeight / 2, 0, 1);
-            //context.strokeRect(margin, y, trackWidth-2*margin, height);
+
+            // roundRect(x, y, width, height, radius, fill, stroke)
+
+            // bufferCtx.roundRect(0, ideogramTop, ideogramWidth, ideogramHeight, ideogramHeight / 2, 0, 1);
+            bufferCtx.roundRect(shim, shim + ideogramTop, ideogramWidth - 2 * shim, ideogramHeight - 2*shim, (ideogramHeight - 2*shim)/2, 0, 1);
             lastPX = end;
-
-
         }
 
-        function getCytobandColor(data) {
+        function getCytobandColor(colors, data) {
+
             if (data.type == 'c') { // centermere: "acen"
                 return "rgb(150, 10, 10)"
-
             } else {
                 var stain = data.stain; // + 4;
 
@@ -245,10 +311,10 @@ var igv = (function (igv) {
                 if (data.type == 'p') {
                     shade = Math.floor(230 - stain / 100.0 * 230);
                 }
-                var c = stainColors[shade];
+                var c = colors[shade];
                 if (c == null) {
                     c = "rgb(" + shade + "," + shade + "," + shade + ")";
-                    stainColors[shade] = c;
+                    colors[shade] = c;
                 }
                 return c;
 
@@ -257,6 +323,46 @@ var igv = (function (igv) {
 
     };
 
+    igv.IdeoPanel.clickHandler  = function  (panel, e) {
+
+        var xy,
+            xPercentage,
+            genomicState = panel.genomicState,
+            referenceFrame = genomicState.referenceFrame,
+            chr,
+            locusLength,
+            chrCoveragePercentage,
+            locus,
+            ss,
+            ee;
+
+        xy = igv.translateMouseCoordinates(e, panel.$ideogram.get(0));
+        xPercentage = xy.x / panel.$ideogram.width();
+
+        locusLength = referenceFrame.bpPerPixel * panel.$ideogram.width();
+
+        chr = igv.browser.genome.getChromosome(referenceFrame.chrName);
+        chrCoveragePercentage = locusLength / chr.bpLength;
+
+        if (xPercentage - (chrCoveragePercentage/2.0) < 0) {
+            xPercentage = chrCoveragePercentage/2.0;
+        }
+
+        if (xPercentage + (chrCoveragePercentage/2.0) > 1.0) {
+            xPercentage = 1.0 - chrCoveragePercentage/2.0;
+        }
+
+        ss = Math.round((xPercentage - (chrCoveragePercentage/2.0)) * chr.bpLength);
+        ee = Math.round((xPercentage + (chrCoveragePercentage/2.0)) * chr.bpLength);
+
+        referenceFrame.start = Math.round((xPercentage - (chrCoveragePercentage/2.0)) * chr.bpLength);
+        referenceFrame.bpPerPixel = (ee - ss)/ panel.$ideogram.width();
+
+        igv.browser.updateLocusSearchWithGenomicState(genomicState);
+
+        igv.browser.repaintWithLocusIndex( panel.genomicState.locusIndex )
+
+    };
     return igv;
 })
 (igv || {});

@@ -25,202 +25,113 @@
 
 var igv = (function (igv) {
 
+    igv.geneNameLookupPathTemplate = function (genomeId) {
+
+        var path;
+
+        path = 'https://portals.broadinstitute.org/webservices/igv/locus?genome=' + genomeId + '&name=$FEATURE$';
+
+        return path;
+    };
+
+    igv.geneNameLookupServicePromise = function (name, genomeId) {
+
+        var pathTemplate,
+            path;
+
+        pathTemplate = igv.geneNameLookupPathTemplate(genomeId);
+
+        path = pathTemplate.replace("$FEATURE$", name);
+
+        return igvxhr.loadString(path);
+
+    };
+
+    igv.filenameOrURLHasSuffix = function  (fileOrURL, suffix) {
+        var str = (fileOrURL instanceof File) ? fileOrURL.name : fileOrURL;
+        return str.toLowerCase().endsWith( suffix )
+    };
+
+    igv.isFilePath = function (path) {
+        return (path instanceof File);
+    };
+
+    igv.makeToggleButton = function (buttonOnLabel, buttonOffLabel, configurationKey, get$Target, continuation) {
+
+        var $button = $('<div class="igv-nav-bar-toggle-button">');
+
+        skin$ButtonWithTruthFunction($button, (true === igv.browser.config[ configurationKey ]), buttonOnLabel, buttonOffLabel);
+
+        $button.click(function () {
+
+            var $target = get$Target();
+
+            igv.browser.config[ configurationKey ] = !igv.browser.config[ configurationKey ];
+
+            $target.toggle();
+
+            skin$ButtonWithTruthFunction($(this), $target.is(":visible"), buttonOnLabel, buttonOffLabel);
+        });
+
+        function skin$ButtonWithTruthFunction($b, truth, onLabel, offLabel) {
+
+            $b.removeClass('igv-nav-bar-toggle-button-on');
+            $b.removeClass('igv-nav-bar-toggle-button-off');
+            if (true === truth) {
+                $b.addClass('igv-nav-bar-toggle-button-off');
+                $b.text(offLabel);
+
+                if (continuation) {
+                    continuation();
+                }
+            } else {
+                $b.addClass('igv-nav-bar-toggle-button-on');
+                $b.text(onLabel);
+            }
+        }
+
+        return $button;
+    };
+
     igv.presentAlert = function (string) {
 
-        igv.alert.configure(function () {
-            return string;
-        }, undefined, undefined);
+        igv.alert.$dialogLabel.text(string);
         igv.alert.show(undefined);
+
         igv.popover.hide();
 
     };
 
-    igv.trackMenuItems = function (popover, trackView) {
+    igv.attachDialogCloseHandlerWithParent = function ($parent, closeHandler) {
 
-        var menuItems = [],
-            trackItems;
+        var $container = $('<div>'),
+            $fa = $('<i class="fa fa-times">');
 
-        menuItems.push(igv.dialogMenuItem(
-            popover,
-            trackView,
-            "Set track name",
+        $container.append($fa);
+        $parent.append($container);
+
+        $fa.hover(
             function () {
-                return "Track Name"
-            },
-            trackView.track.name,
-            function () {
+                $fa.removeClass("fa-times");
+                $fa.addClass("fa-times-circle");
 
-                var alphanumeric = parseAlphanumeric(igv.dialog.$dialogInput.val());
-
-                if (undefined !== alphanumeric) {
-                    igv.setTrackLabel(trackView.track, alphanumeric);
-                    trackView.update();
-                }
-
-                function parseAlphanumeric(value) {
-
-                    var alphanumeric_re = /(?=.*[a-zA-Z].*)([a-zA-Z0-9 ]+)/,
-                        alphanumeric = alphanumeric_re.exec(value);
-
-                    return (null !== alphanumeric) ? alphanumeric[0] : "untitled";
-                }
-
-            }, undefined));
-
-        menuItems.push(igv.dialogMenuItem(
-            popover,
-            trackView,
-            "Set track height",
-            function () {
-                return "Track Height"
-            },
-            trackView.trackDiv.clientHeight,
-            function () {
-
-                var number = parseFloat(igv.dialog.$dialogInput.val(), 10);
-
-                if (undefined !== number) {
-                    // If explicitly setting the height adust min or max, if neccessary.
-                    if (trackView.track.minHeight !== undefined && trackView.track.minHeight > number) {
-                        trackView.track.minHeight = number;
-                    }
-                    if (trackView.track.maxHeight !== undefined && trackView.track.maxHeight < number) {
-                        trackView.track.minHeight = number;
-                    }
-                    trackView.setTrackHeight(number);
-                    trackView.track.autoHeight = false;   // Explicitly setting track height turns off autoHeight
-
-                }
-
-            }, undefined));
-
-        if (trackView.track.popupMenuItems) {
-
-            trackItems = trackView.track.popupMenuItems(popover);
-
-            if (trackItems && trackItems.length > 0) {
-
-                trackItems.forEach(function (trackItem, i) {
-
-                    var str;
-
-                    if (trackItem.name) {
-
-                        str = (0 === i) ? '<div class=\"igv-track-menu-item igv-track-menu-border-top\">' : '<div class=\"igv-track-menu-item\">';
-                        str = str + trackItem.name + '</div>';
-
-                        menuItems.push({object: $(str), click: trackItem.click, init: trackItem.init});
-                    } else {
-
-                        if (0 === i) {
-                            trackItem.object.addClass("igv-track-menu-border-top");
-                            menuItems.push(trackItem);
-                        }
-                        else {
-                            menuItems.push(trackItem);
-                        }
-
-                    }
-
-                });
-            }
-        }
-
-        if (trackView.track.removable !== false) {
-
-            menuItems.push(
-                igv.dialogMenuItem(
-                    popover,
-                    trackView,
-                    "Remove track",
-                    function () {
-                        var label = "Remove " + trackView.track.name;
-                        return '<div class="igv-dialog-label-centered">' + label + '</div>';
-                    },
-                    undefined,
-                    function () {
-                        popover.hide();
-                        trackView.browser.removeTrack(trackView.track);
-                    },
-                    true)
-            );
-
-        }
-
-        return menuItems;
-
-    };
-
-    igv.dialogMenuItem = function (popover, trackView, gearMenuLabel, labelHTMLFunction, inputValue, clickFunction, doDrawBorderOrUndefined) {
-
-        var _div = (true === doDrawBorderOrUndefined) ? '<div class="igv-track-menu-item igv-track-menu-border-top">' : '<div class="igv-track-menu-item">';
-
-        return {
-            object: $(_div + gearMenuLabel + '</div>'),
-            click: function () {
-
-                igv.dialog.configure(labelHTMLFunction, inputValue, clickFunction);
-                igv.dialog.show($(trackView.trackDiv));
-                popover.hide();
-            }
-        }
-    };
-
-    igv.dataRangeMenuItem = function (popover, trackView) {
-
-        return {
-            object: $('<div class="igv-track-menu-item">' + "Set data range" + '</div>'),
-            click: function () {
-                igv.dataRangeDialog.configureWithTrackView(trackView);
-                igv.dataRangeDialog.show();
-                popover.hide();
-            }
-        }
-    };
-
-    igv.colorPickerMenuItem = function (popover, trackView) {
-
-        return {
-            object: $('<div class="igv-track-menu-item">' + "Set track color" + '</div>'),
-            click: function () {
-                igv.colorPicker.trackView = trackView;
-                igv.colorPicker.show();
-                popover.hide();
-            }
-        }
-    };
-
-    igv.dialogCloseWithParentObject = function (parentObject, closer) {
-
-        var closeContainer = $('<div class="igv-dialog-close-container">'),
-            close_fa = $('<i class="fa fa-times igv-dialog-close-fa">');
-
-        closeContainer.append(close_fa[0]);
-        parentObject.append(closeContainer[0]);
-
-        close_fa.hover(
-            function () {
-                close_fa.removeClass("fa-times");
-                close_fa.addClass("fa-times-circle");
-
-                close_fa.css({
-                    "color": "#222"
+                $fa.css({
+                    color:"#222"
                 });
             },
 
             function () {
-                close_fa.removeClass("fa-times-circle");
-                //close_fa.removeClass("fa-times-circle fa-lg");
-                close_fa.addClass("fa-times");
+                $fa.removeClass("fa-times-circle");
+                $fa.addClass("fa-times");
 
-                close_fa.css({
-                    "color": "#444"
+                $fa.css({
+                    color:"#444"
                 });
 
             }
         );
 
-        close_fa.click(closer);
+        $fa.click(closeHandler);
 
     };
 
@@ -333,6 +244,34 @@ var igv = (function (igv) {
         return Math.random() * (max - min) + min;
     };
 
+    igv.prettyBasePairNumber = function (raw) {
+
+        var denom,
+            units,
+            value,
+            floored;
+
+        if (raw > 1e7) {
+            denom = 1e6;
+            units = " mb";
+        } else if (raw > 1e4) {
+
+            denom = 1e3;
+            units = " kb";
+
+            value = raw/denom;
+            floored = Math.floor(value);
+            return igv.numberFormatter(floored) + units;
+        } else {
+            return igv.numberFormatter(raw) + " bp";
+        }
+
+        value = raw/denom;
+        floored = Math.floor(value);
+
+        return floored.toString() + units;
+    };
+
     // StackOverflow: http://stackoverflow.com/a/10810674/116169
     igv.numberFormatter = function (rawNumber) {
 
@@ -358,12 +297,21 @@ var igv = (function (igv) {
      */
     igv.translateMouseCoordinates = function (e, target) {
 
-        var eFixed = $.event.fix(e),   // Sets pageX and pageY for browsers that don't support them
-            posx = eFixed.pageX - $(target).offset().left,
-            posy = eFixed.pageY - $(target).offset().top;
+        var $target = $(target),
+            eFixed,
+            posx,
+            posy;
+
+        // Sets pageX and pageY for browsers that don't support them
+        eFixed = $.event.fix(e);
+
+        if (undefined === $target.offset()) {
+            console.log('igv.translateMouseCoordinates - $target.offset() is undefined.');
+        }
+        posx = eFixed.pageX - $target.offset().left;
+        posy = eFixed.pageY - $target.offset().top;
 
         return {x: posx, y: posy}
-
     };
 
     /**
@@ -376,10 +324,8 @@ var igv = (function (igv) {
         nameValueArray.forEach(function (nameValue) {
 
             if (nameValue.name) {
-                //markup += "<tr><td class=\"igv-popover-td\">" + "<span class=\"igv-popoverName\">" + nameValue.name + "</span>" + "<span class=\"igv-popoverValue\">" + nameValue.value + "</span>" + "</td></tr>";
-                markup += "<tr><td class=\"igv-popover-td\">" + "<div class=\"igv-popoverNameValue\">" + "<span class=\"igv-popoverName\">" + nameValue.name + "</span>" + "<span class=\"igv-popoverValue\">" + nameValue.value + "</span>" + "</div>" + "</td></tr>";
-            }
-            else {
+                markup += "<tr><td class=\"igv-popover-td\">" + "<div class=\"igv-popover-name-value\">" + "<span class=\"igv-popover-name\">" + nameValue.name + "</span>" + "<span class=\"igv-popover-value\">" + nameValue.value + "</span>" + "</div>" + "</td></tr>";
+            } else {
                 // not a name/value pair
                 markup += "<tr><td>" + nameValue.toString() + "</td></tr>";
             }
@@ -545,6 +491,15 @@ var igv = (function (igv) {
         }
     };
 
+    igv.buildOptions = function(config, options) {
+        var defaultOptions = {
+            oauthToken: config.oauthToken || undefined,
+            headers: config.headers,
+            withCredentials: config.withCredentials
+        };
+
+        return _.extend(defaultOptions, options);
+    };
 
     return igv;
 

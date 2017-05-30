@@ -52,6 +52,8 @@ var igv = (function (igv) {
             }
         } else if (config.sourceType === "bigquery") {
             this.reader = new igv.BigQueryFeatureReader(config);
+        } else if (config.source !== undefined) {
+            this.reader = new igv.CustomServiceReader(config.source);
         }
         else {
             // Default for all sorts of ascii tab-delimited file formts
@@ -76,10 +78,16 @@ var igv = (function (igv) {
                     self.reader.readHeader().then(function (header) {
                         // Non-indexed readers will return features as a side effect.  This is an important,
                         // if unfortunate, performance hack
-                        if(header) {
+                        if (header) {
                             var features = header.features;
                             if (features) {
+
+                                if ("gtf" === self.config.format || "gff3" === self.config.format || "gff" === self.config.format) {
+                                    features = (new igv.GFFHelper(self.config.format)).combineFeatures(features);
+                                }
+
                                 // Assign overlapping features to rows
+
                                 packFeatures(features, maxRows);
                                 self.featureCache = new igv.FeatureCache(features);
 
@@ -105,11 +113,16 @@ var igv = (function (igv) {
     }
 
     function addFeaturesToDB(featureList) {
+        var echo = [];
         featureList.forEach(function (feature) {
             if (feature.name) {
                 igv.browser.featureDB[feature.name.toUpperCase()] = feature;
             }
-        })
+        });
+        // _.each(igv.browser.featureDB, function(item){
+        //     console.log('name ' + item.name);
+        // });
+        // console.log('yo');
     }
 
 
@@ -121,20 +134,52 @@ var igv = (function (igv) {
      * @param chr
      * @param bpStart
      * @param bpEnd
+     * @param bpPerPixel
      */
 
-    igv.FeatureSource.prototype.getFeatures = function (chr, bpStart, bpEnd) {
+    igv.FeatureSource.prototype.getFeatures = function (chr, bpStart, bpEnd, bpPerPixel) {
 
         var self = this;
         return new Promise(function (fulfill, reject) {
 
-            var genomicInterval = new igv.GenomicInterval(chr, bpStart, bpEnd),
-                featureCache = self.featureCache,
-                maxRows = self.config.maxRows || 500;
+            var genomicInterval,
+                featureCache,
+                maxRows,
+                str;
 
-            if (featureCache && (featureCache.range === undefined || featureCache.range.containsRange(genomicInterval))) {
+            genomicInterval = new igv.GenomicInterval(chr, bpStart, bpEnd);
+            featureCache = self.featureCache;
+            maxRows = self.config.maxRows || 500;
+            str = chr.toLowerCase();
+
+            if ("all" === str) {
+                if (self.reader.supportsWholeGenome) {
+                    if (featureCache && featureCache.range === undefined) {
+                        fulfill(getWGFeatures(featureCache.allFeatures()));
+                    }
+                    else {
+                        self.reader
+                            .readFeatures(chr)
+                            .then(function (featureList) {
+                            if (featureList && typeof featureList.forEach === 'function') {  // Have result AND its an array type
+                                if ("gtf" === self.config.format || "gff3" === self.config.format || "gff" === self.config.format) {
+                                    featureList = (new igv.GFFHelper(self.config.format)).combineFeatures(featureList);
+                                }
+                                self.featureCache = new igv.FeatureCache(featureList);   // Note - replacing previous cache with new one
+
+                                // Assign overlapping features to rows
+                                packFeatures(featureList, maxRows);
+                            }
+                            fulfill(getWGFeatures(self.featureCache.allFeatures()));
+                        });
+                    }
+                } else {
+                    fulfill(null);
+                }
+            }
+
+            else if (featureCache && (featureCache.range === undefined || featureCache.range.containsRange(genomicInterval))) {
                 fulfill(self.featureCache.queryFeatures(chr, bpStart, bpEnd));
-
             }
             else {
                 // TODO -- reuse cached features that overelap new region
@@ -142,7 +187,8 @@ var igv = (function (igv) {
                 if (self.sourceType === 'file' && (self.visibilityWindow === undefined || self.visibilityWindow <= 0)) {
                     // Expand genomic interval to grab entire chromosome
                     genomicInterval.start = 0;
-                    genomicInterval.end = Number.MAX_VALUE;
+                    var chromosome = igv.browser.genome.getChromosome(chr);
+                    genomicInterval.end = (chromosome === undefined ? Number.MAX_VALUE : chromosome.bpLength);
                 }
 
                 self.reader.readFeatures(chr, genomicInterval.start, genomicInterval.end).then(
@@ -150,20 +196,13 @@ var igv = (function (igv) {
 
                         if (featureList && typeof featureList.forEach === 'function') {  // Have result AND its an array type
 
-                            var isIndexed =
-                                self.reader.indexed ||
-                                self.config.sourceType === "ga4gh" ||
-                                self.config.sourceType === "immvar" ||
-                                self.config.sourceType === "gtex" ||
-                                self.config.sourceType === "bigquery";
+                            var isQueryable = self.reader.indexed || self.config.sourceType !== "file";
 
-                            // TODO -- COMBINE GFF FEATURES HERE
-                            // if(self.isGFF) featureList = combineFeatures(featureList);
                             if ("gtf" === self.config.format || "gff3" === self.config.format || "gff" === self.config.format) {
                                 featureList = (new igv.GFFHelper(self.config.format)).combineFeatures(featureList);
                             }
 
-                            self.featureCache = isIndexed ?
+                            self.featureCache = isQueryable ?
                                 new igv.FeatureCache(featureList, genomicInterval) :
                                 new igv.FeatureCache(featureList);   // Note - replacing previous cache with new one
 
@@ -186,7 +225,7 @@ var igv = (function (igv) {
                     }).catch(reject);
             }
         });
-    }
+    };
 
 
     function packFeatures(features, maxRows) {
@@ -253,6 +292,42 @@ var igv = (function (igv) {
 
             });
         }
+    }
+
+
+    function getWGFeatures(features) {
+
+        var wgFeatures;
+
+        wgFeatures = _.map(features, function(f) {
+
+            var wg;
+
+            wg = (JSON.parse(JSON.stringify(f)));
+            wg.start = igv.browser.genome.getGenomeCoordinate(f.chr, f.start);
+            wg.end = igv.browser.genome.getGenomeCoordinate(f.chr, f.end);
+
+            return wg;
+
+        });
+
+        // features.forEach(function (f) {
+        //     var wgStart,
+        //         wgEnd,
+        //         wgFeature;
+        //
+        //     wgStart = igv.browser.genome.getGenomeCoordinate(f.chr, f.start);
+        //     wgEnd = igv.browser.genome.getGenomeCoordinate(f.chr, f.end);
+        //
+        //     wgFeature = (JSON.parse(JSON.stringify(f)));
+        //
+        //     wgFeature.start = wgStart;
+        //     wgFeature.end = wgEnd;
+        //
+        //     wgFeatures.push(wgFeature);
+        // });
+
+        return wgFeatures;
     }
 
     return igv;

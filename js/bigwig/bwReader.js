@@ -67,12 +67,8 @@ var igv = (function (igv) {
         var self = this;
 
         return new Promise(function (fulfill, reject) {
-            igvxhr.loadArrayBuffer(self.path,
-                {
-                    headers: self.config.headers,
-                    range: {start: 0, size: BBFILE_HEADER_SIZE},
-                    withCredentials: self.config.withCredentials
-                }).then(function (data) {
+            igvxhr.loadArrayBuffer(self.path, igv.buildOptions(self.config, {range: {start: 0, size: BBFILE_HEADER_SIZE}}))
+                .then(function (data) {
 
                 if (!data) return;
 
@@ -110,13 +106,13 @@ var igv = (function (igv) {
                 }
                 // Table 5  "Common header for BigWig and BigBed files"
                 self.header = {};
-                self.header.bwVersion = binaryParser.getShort();
-                self.header.nZoomLevels = binaryParser.getShort();
+                self.header.bwVersion = binaryParser.getUShort();
+                self.header.nZoomLevels = binaryParser.getUShort();
                 self.header.chromTreeOffset = binaryParser.getLong();
                 self.header.fullDataOffset = binaryParser.getLong();
                 self.header.fullIndexOffset = binaryParser.getLong();
-                self.header.fieldCount = binaryParser.getShort();
-                self.header.definedFieldCount = binaryParser.getShort();
+                self.header.fieldCount = binaryParser.getUShort();
+                self.header.definedFieldCount = binaryParser.getUShort();
                 self.header.autoSqlOffset = binaryParser.getLong();
                 self.header.totalSummaryOffset = binaryParser.getLong();
                 self.header.uncompressBuffSize = binaryParser.getInt();
@@ -139,12 +135,8 @@ var igv = (function (igv) {
 
         return new Promise(function (fulfill, reject) {
 
-            igvxhr.loadArrayBuffer(self.path,
-                {
-                    headers: self.config.headers,
-                    range: {start: startOffset, size: (self.header.fullDataOffset - startOffset + 5)},
-                    withCredentials: self.config.withCredentials
-                }).then(function (data) {
+            igvxhr.loadArrayBuffer(self.path, igv.buildOptions(self.config, {range: {start: startOffset, size: (self.header.fullDataOffset - startOffset + 5)}}))
+                .then(function (data) {
 
                 var nZooms = self.header.nZoomLevels,
                     binaryParser = new igv.BinaryParser(new DataView(data)),

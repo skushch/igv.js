@@ -29,13 +29,21 @@ var igv = (function (igv) {
     var alignmentRowYInset = 0;
     var alignmentStartGap = 5;
     var downsampleRowHeight = 5;
-
+    const DEFAULT_COVERAGE_TRACK_HEIGHT = 50;
+    const DEFAULT_TRACK_HEIGHT = 300;
 
     igv.BAMTrack = function (config) {
 
         this.featureSource = new igv.BamSource(config);
 
+        // Override default track height for bams
+        if(config.height === undefined) config.height = DEFAULT_TRACK_HEIGHT;
+
         igv.configTrack(this, config);
+
+        if(config.coverageTrackHeight === undefined) {
+            config.coverageTrackHeight = DEFAULT_COVERAGE_TRACK_HEIGHT;
+        }
 
         this.coverageTrack = new CoverageTrack(config, this);
 
@@ -45,7 +53,7 @@ var igv = (function (igv) {
 
         this.viewAsPairs = config.viewAsPairs;
 
-        this.pairsSupported = config.pairsSupported === undefined ? true : false;
+        this.pairsSupported = (undefined === config.pairsSupported);
 
         this.color = config.color || "rgb(185, 185, 185)";
 
@@ -56,11 +64,11 @@ var igv = (function (igv) {
         // filter alignments
         this.filterOption = config.filterOption || {name: "mappingQuality", params: [30, undefined]};
 
-    }
+    };
 
     igv.BAMTrack.prototype.getFeatures = function (chr, bpStart, bpEnd) {
         return this.featureSource.getAlignments(chr, bpStart, bpEnd);
-    }
+    };
 
     igv.BAMTrack.filters = {
 
@@ -92,24 +100,24 @@ var igv = (function (igv) {
         }
     };
 
-
     // Alt - Click to Sort alignment rows
-    igv.BAMTrack.prototype.altClick = function (genomicLocation, event) {
+    igv.BAMTrack.prototype.altClick = function (genomicLocation, referenceFrame, event) {
 
         this.alignmentTrack.sortAlignmentRows(genomicLocation, this.sortOption);
 
-        this.trackView.redrawTile(this.featureSource.alignmentContainer);
-        $(this.trackView.viewportDiv).scrollTop(0);
+        // TODO - dat. Temporary hack to stand up mult-locus implementation.
+        // TODO - dat. MUST identify viewport that was clicked in.
+        this.trackView.viewports[ 0 ].redrawTile(this.featureSource.alignmentContainer);
+        this.trackView.viewports[ 0 ].$viewport.scrollTop(0);
 
         this.sortDirection = !this.sortDirection;
     };
-
 
     /**
      * Optional method to compute pixel height to accomodate the list of features.  The implementation below
      * has side effects (modifiying the samples hash).  This is unfortunate, but harmless.
      *
-     * @param features
+     * @param alignmentContainer
      * @returns {number}
      */
     igv.BAMTrack.prototype.computePixelHeight = function (alignmentContainer) {
@@ -121,7 +129,9 @@ var igv = (function (igv) {
 
     igv.BAMTrack.prototype.draw = function (options) {
 
-        this.coverageTrack.draw(options);
+        if(this.coverageTrack.height > 0) {
+            this.coverageTrack.draw(options);
+        }
 
         this.alignmentTrack.draw(options);
     };
@@ -130,56 +140,119 @@ var igv = (function (igv) {
 
         this.coverageTrack.paintAxis(ctx, pixelWidth, this.coverageTrackHeight);
 
-    }
+    };
 
-    igv.BAMTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset) {
-
-        if (yOffset >= this.coverageTrack.top && yOffset < this.coverageTrack.height) {
-            return this.coverageTrack.popupData(genomicLocation, xOffset, this.coverageTrack.top);
-        }
-        else {
-            return this.alignmentTrack.popupData(genomicLocation, xOffset, yOffset - this.alignmentTrack.top);
-        }
-
-    }
-
-    igv.BAMTrack.prototype.popupMenuItems = function (popover) {
+    igv.BAMTrack.prototype.popupMenuItemList = function (config) {
 
         var self = this,
+            $e,
+            clickHandler,
+            list = [];
+
+        $e = $('<div>');
+        $e.text('Sort by base');
+
+        clickHandler = function () {
+
+            self.alignmentTrack.sortAlignmentRows(config.genomicLocation, self.sortOption);
+
+            config.viewport.redrawTile(self.featureSource.alignmentContainer);
+
+            config.viewport.$viewport.scrollTop(0);
+
+            self.sortDirection = !(self.sortDirection);
+
+            config.popover.hide();
+
+        };
+
+        list.push({ name: undefined, object: $e, click: clickHandler, init: undefined });
+
+        if (false === self.viewAsPairs) {
+
+            $e = $('<div>');
+            $e.text('View mate in split screen');
+
+            clickHandler = function () {
+                self.alignmentTrack.popupMenuItemList(config);
+            };
+
+            list.push({ name: undefined, object: $e, click: clickHandler, init: undefined });
+
+        }
+
+        return list;
+
+    };
+
+    igv.BAMTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset, referenceFrame) {
+
+        if (yOffset >= this.coverageTrack.top && yOffset < this.coverageTrack.height) {
+            return this.coverageTrack.popupData(genomicLocation, xOffset, this.coverageTrack.top, referenceFrame);
+        } else {
+            return this.alignmentTrack.popupData(genomicLocation, xOffset, yOffset - this.alignmentTrack.top, referenceFrame);
+        }
+
+    };
+
+    igv.BAMTrack.prototype.popupDataWithConfiguration = function (config) {
+
+        if (config.y >= this.coverageTrack.top && config.y < this.coverageTrack.height) {
+            return this.coverageTrack.popupDataWithConfiguration(config);
+        } else {
+            return this.alignmentTrack.popupDataWithConfiguration(config);
+        }
+
+    };
+
+    igv.BAMTrack.prototype.menuItemList = function (popover) {
+
+        var self = this,
+            $e,
             html,
             menuItems = [],
             colorByMenuItems = [],
-            tagLabel = 'tag' + (self.alignmentTrack.colorByTag ? ' (' + self.alignmentTrack.colorByTag + ')' : ''),
+            tagLabel,
             selected;
 
+        // color picker
+        menuItems.push(igv.colorPickerMenuItem(popover, this.trackView));
+
+        // sort by genomic location
+        menuItems.push(sortMenuItem(popover));
 
         colorByMenuItems.push({key: 'none', label: 'track color'});
 
         if(!self.viewAsPairs) {
             colorByMenuItems.push({key: 'strand', label: 'read strand'});
         }
+
         if (self.pairsSupported && self.alignmentTrack.hasPairs) {
             colorByMenuItems.push({key: 'firstOfPairStrand', label: 'first-of-pair strand'});
         }
+
+        tagLabel = 'tag' + (self.alignmentTrack.colorByTag ? ' (' + self.alignmentTrack.colorByTag + ')' : '');
         colorByMenuItems.push({key: 'tag', label: tagLabel});
 
-        menuItems.push(igv.colorPickerMenuItem(popover, this.trackView));
-
-        menuItems.push('<div class="igv-track-menu-category igv-track-menu-border-top">Color by</div>');
+        $e = $('<div class="igv-track-menu-category igv-track-menu-border-top">');
+        $e.text('Color by');
+        menuItems.push({ name: undefined, object: $e, click: undefined, init: undefined });
+        // menuItems.push('<div class="igv-track-menu-category igv-track-menu-border-top">Color by</div>');
 
         colorByMenuItems.forEach(function (item) {
-            selected = self.alignmentTrack.colorBy === item.key;
+            selected = (self.alignmentTrack.colorBy === item.key);
             menuItems.push(colorByMarkup(item, selected));
         });
 
-
         html = [];
         if (self.pairsSupported && self.alignmentTrack.hasPairs) {
-            html.push('<div class="igv-track-menu-item igv-track-menu-border-top">');
-            html.push(true === self.viewAsPairs ? '<i class="fa fa-check fa-check-shim">' : '<i class="fa fa-check fa-check-shim fa-check-hidden">');
+
+            html.push('<div class="igv-track-menu-border-top">');
+            html.push(true === self.viewAsPairs ? '<i class="fa fa-check">' : '<i class="fa fa-check fa-check-hidden">');
             html.push('</i>');
             html.push('View as pairs');
             html.push('</div>');
+
             menuItems.push({
                 object: $(html.join('')),
                 click: function () {
@@ -205,40 +278,36 @@ var igv = (function (igv) {
 
         function colorByMarkup(menuItem, showCheck, index) {
 
-            var parts = [],
-                item = {};
+            var $e,
+                clickHandler,
+                parts = [];
 
+            parts.push('<div>');
 
-            //parts.push((0 === index) ? '<div class=\"igv-track-menu-item igv-track-menu-border-top\">' : '<div class="igv-track-menu-item">');
-            parts.push('<div class="igv-track-menu-item">');
-
-            parts.push(showCheck ? '<i class="fa fa-check fa-check-shim"></i>' : '<i class="fa fa-check fa-check-shim fa-check-hidden"></i>');
-
-            //parts.push('<span>');
-            //parts.push('Color by: ');
-            //parts.push('</span>');
+            parts.push(showCheck ? '<i class="fa fa-check"></i>' : '<i class="fa fa-check fa-check-hidden"></i>');
 
             if (menuItem.key === 'tag') {
                 parts.push('<span id="color-by-tag">');
             } else {
                 parts.push('<span>');
             }
+
             parts.push(menuItem.label);
             parts.push('</span>');
 
             parts.push('</div>');
 
-            item.object = $(parts.join(''));
+            $e = $(parts.join(''));
 
-            item.click = function () {
+            clickHandler = function () {
 
                 igv.popover.hide();
 
                 if ('tag' === menuItem.key) {
 
-                    igv.dialog.configure(function () {
-                            return "Tag Name"
-                        },
+                    igv.dialog.configure(
+
+                        function () { return "Tag Name" },
 
                         self.alignmentTrack.colorByTag ? self.alignmentTrack.colorByTag : '',
 
@@ -263,10 +332,41 @@ var igv = (function (igv) {
                 }
             };
 
-            return item;
-        }
-    };
+            return { name: undefined, object: $e, click: clickHandler, init: undefined }
 
+        }
+
+        function sortMenuItem(popover) {
+
+            var $e,
+                clickHandler;
+
+            $e = $('<div>');
+            $e.text('Sort by base');
+
+            clickHandler = function () {
+                var genomicState = _.first(igv.browser.genomicStateList),
+                    referenceFrame = genomicState.referenceFrame,
+                    genomicLocation,
+                    viewportHalfWidth;
+
+                popover.hide();
+
+                viewportHalfWidth = Math.floor(0.5 * (igv.browser.viewportContainerWidth()/genomicState.locusCount));
+                genomicLocation = Math.floor((referenceFrame.start) + referenceFrame.toBP(viewportHalfWidth));
+
+                self.altClick(genomicLocation, undefined, undefined);
+
+                if ("show center guide" === igv.browser.centerGuide.$centerGuideToggle.text()) {
+                    igv.browser.centerGuide.$centerGuideToggle.trigger( "click" );
+                }
+
+            };
+
+            return { name: undefined, object: $e, click: clickHandler, init: undefined }
+        }
+
+    };
 
     function shadedBaseColor(qual, nucleotide, genomicLocation) {
 
@@ -302,20 +402,21 @@ var igv = (function (igv) {
         return color;
     }
 
-
     CoverageTrack = function (config, parent) {
 
         this.parent = parent;
         this.featureSource = parent.featureSource;
         this.top = 0;
-        this.height = 50;
+
+
+        this.height = config.coverageTrackHeight;
         this.dataRange = {min: 0};   // Leav max undefined
         this.paintAxis = igv.paintAxis;
-    }
+    };
 
     CoverageTrack.prototype.computePixelHeight = function (alignmentContainer) {
         return this.height;
-    }
+    };
 
     CoverageTrack.prototype.draw = function (options) {
 
@@ -360,7 +461,9 @@ var igv = (function (igv) {
             y = this.height - h;
             x = Math.floor((bp - bpStart) / bpPerPixel);
 
+
             igv.graphics.setProperties(ctx, {fillStyle: this.parent.color, strokeStyle: this.color});
+            // igv.graphics.setProperties(ctx, {fillStyle: "rgba(0, 200, 0, 0.25)", strokeStyle: "rgba(0, 200, 0, 0.25)" });
             igv.graphics.fillRect(ctx, x, y, w, h);
         }
 
@@ -407,10 +510,13 @@ var igv = (function (igv) {
             }
         }
 
-    }
+    };
 
+    CoverageTrack.prototype.popupDataWithConfiguration = function (config) {
+        return this.popupData(config.genomicLocation, config.x, this.top, config.viewport.genomicState.referenceFrame);
+    };
 
-    CoverageTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset) {
+    CoverageTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset, referenceFrame) {
 
         var coverageMap = this.featureSource.alignmentContainer.coverageMap,
             coverageMapIndex,
@@ -424,7 +530,7 @@ var igv = (function (igv) {
         if (coverage) {
 
 
-            nameValues.push(igv.browser.referenceFrame.chr + ":" + igv.numberFormatter(1 + genomicLocation));
+            nameValues.push(referenceFrame.chrName + ":" + igv.numberFormatter(1 + genomicLocation));
 
             nameValues.push({name: 'Total Count', value: coverage.total});
 
@@ -461,12 +567,11 @@ var igv = (function (igv) {
 
     };
 
-
     AlignmentTrack = function (config, parent) {
 
         this.parent = parent;
         this.featureSource = parent.featureSource;
-        this.top = config.coverageTrackHeight + 5 || 55;
+        this.top = config.coverageTrackHeight == 0 ? 0 : config.coverageTrackHeight  + 5;
         this.alignmentRowHeight = config.alignmentRowHeight || 14;
 
         this.negStrandColor = config.negStrandColor || "rgba(150, 150, 230, 0.75)";
@@ -486,7 +591,7 @@ var igv = (function (igv) {
 
         this.hasPairs = false;   // Until proven otherwise
 
-    }
+    };
 
     AlignmentTrack.prototype.computePixelHeight = function (alignmentContainer) {
 
@@ -501,7 +606,7 @@ var igv = (function (igv) {
             return this.height;
         }
 
-    }
+    };
 
     AlignmentTrack.prototype.draw = function (options) {
 
@@ -588,40 +693,43 @@ var igv = (function (igv) {
         function drawPairConnector(alignment, yRect, alignmentHeight) {
 
             var alignmentColor = getAlignmentColor.call(self, alignment.firstAlignment),
-                outlineColor = alignmentColor,
+                outlineColor = 'alignmentColor',
                 xBlockStart = (alignment.connectingStart - bpStart) / bpPerPixel,
                 xBlockEnd = (alignment.connectingEnd - bpStart) / bpPerPixel,
                 yStrokedLine = yRect + alignmentHeight / 2;
 
-            if ((alignment.connectingEnd) < bpStart || alignment.connectingStart > bpEnd) return;
+            if ((alignment.connectingEnd) < bpStart || alignment.connectingStart > bpEnd) {
+                return;
+            }
 
             if (alignment.mq <= 0) {
                 alignmentColor = igv.addAlphaToRGB(alignmentColor, "0.15");
             }
 
-            igv.graphics.setProperties(ctx, {fillStyle: alignmentColor, strokeStyle: outlineColor});
+            igv.graphics.setProperties(ctx, { fillStyle: alignmentColor, strokeStyle: outlineColor } );
 
             igv.graphics.strokeLine(ctx, xBlockStart, yStrokedLine, xBlockEnd, yStrokedLine);
 
         }
 
-
         function drawSingleAlignment(alignment, yRect, alignmentHeight) {
 
             var alignmentColor = getAlignmentColor.call(self, alignment),
-                outlineColor = alignmentColor,
+                outlineColor = 'alignmentColor',
                 lastBlockEnd,
                 blocks = alignment.blocks,
                 block,
                 b;
 
-            if ((alignment.start + alignment.lengthOnRef) < bpStart || alignment.start > bpEnd) return;
+            if ((alignment.start + alignment.lengthOnRef) < bpStart || alignment.start > bpEnd) {
+                return;
+            }
 
             if (alignment.mq <= 0) {
                 alignmentColor = igv.addAlphaToRGB(alignmentColor, "0.15");
             }
 
-            igv.graphics.setProperties(ctx, {fillStyle: alignmentColor, strokeStyle: outlineColor});
+            igv.graphics.setProperties(ctx, { fillStyle: alignmentColor, strokeStyle: outlineColor } );
 
             for (b = 0; b < blocks.length; b++) {   // Can't use forEach here -- we need ability to break
 
@@ -691,7 +799,13 @@ var igv = (function (igv) {
                         yRect + alignmentHeight,
                         yRect + alignmentHeight,
                         yRect];
-                    igv.graphics.fillPolygon(ctx, x, y, {fillStyle: alignmentColor});
+
+                    igv.graphics.fillPolygon(ctx, x, y, { fillStyle: alignmentColor });
+
+                    if (self.highlightedAlignmentReadNamed === alignment.readName) {
+                        igv.graphics.strokePolygon(ctx, x, y, { strokeStyle: 'red' });
+                    }
+
                     if (alignment.mq <= 0) {
                         igv.graphics.strokePolygon(ctx, x, y, {strokeStyle: outlineColor});
                     }
@@ -712,13 +826,18 @@ var igv = (function (igv) {
                         yRect + alignmentHeight,
                         yRect + alignmentHeight,
                         yRect];
+
                     igv.graphics.fillPolygon(ctx, x, y, {fillStyle: alignmentColor});
+
+                    if (self.highlightedAlignmentReadNamed === alignment.readName) {
+                        igv.graphics.strokePolygon(ctx, x, y, { strokeStyle: 'red' });
+                    }
+
                     if (alignment.mq <= 0) {
                         igv.graphics.strokePolygon(ctx, x, y, {strokeStyle: outlineColor});
                     }
                 }
                 else {
-                    //      igv.graphics.fillRect(ctx, xBlockStart, yRect, widthBlock, height, {fillStyle: "white"});
                     igv.graphics.fillRect(ctx, xBlockStart, yRect, widthBlock, alignmentHeight, {fillStyle: alignmentColor});
                     if (alignment.mq <= 0) {
                         ctx.save();
@@ -746,7 +865,7 @@ var igv = (function (igv) {
                             if (colorBase) {
                                 xBase = ((block.start + i) - bpStart) / bpPerPixel;
                                 widthBase = Math.max(1, 1 / bpPerPixel);
-                                igv.graphics.fillRect(ctx, xBase, yRect, widthBase, alignmentHeight, {fillStyle: colorBase});
+                                igv.graphics.fillRect(ctx, xBase, yRect, widthBase, alignmentHeight, { fillStyle: colorBase });
                             }
                         }
                     }
@@ -754,47 +873,33 @@ var igv = (function (igv) {
             }
         }
 
-    }
+    };
 
     AlignmentTrack.prototype.sortAlignmentRows = function (genomicLocation, sortOption) {
 
-        var self = this,
-            alignmentContainer = this.featureSource.alignmentContainer,
-            alignmentRows = alignmentContainer.packedAlignmentRows;
+        var self = this;
 
-        alignmentRows.forEach(function (alignmentRow) {
-            alignmentRow.updateScore(genomicLocation, alignmentContainer, sortOption);
+        this.featureSource.alignmentContainer.packedAlignmentRows.forEach(function (row) {
+            row.updateScore(genomicLocation, self.featureSource.alignmentContainer, sortOption);
         });
 
-        alignmentRows.sort(function (a, b) {
-            return self.sortDirection ? a.score - b.score : b.score - a.score;
+        this.featureSource.alignmentContainer.packedAlignmentRows.sort(function (rowA, rowB) {
+            // return rowA.score - rowB.score;
+            return true === self.sortDirection ? rowA.score - rowB.score : rowB.score - rowA.score;
         });
 
-    }
+    };
 
-    function doSortAlignmentRows(genomicLocation, genomicInterval, sortOption, sortDirection) {
+    AlignmentTrack.prototype.popupDataWithConfiguration = function (config) {
 
-        var alignmentRows = genomicInterval.packedAlignmentRows,
-            sequence = genomicInterval.sequence;
+        var clickedObject;
 
-        if (sequence) {
-            sequence = sequence.toUpperCase();
-        } else {
-            console.log("No sequence, no traversal. No discussion!");
-            return;
-        }
+        clickedObject = this.getClickedAlignment(config.viewport, config.genomicLocation);
 
-        alignmentRows.forEach(function (alignmentRow) {
-            alignmentRow.updateScore(genomicLocation, genomicInterval, sortOption);
-        });
+        return clickedObject ? clickedObject.popupData(config.genomicLocation) : undefined;
+    };
 
-        alignmentRows.sort(function (a, b) {
-            return sortDirection ? a.score - b.score : b.score - a.score;
-        });
-
-    }
-
-    AlignmentTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset) {
+    AlignmentTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset, referenceFrame) {
 
         var packedAlignmentRows = this.featureSource.alignmentContainer.packedAlignmentRows,
             downsampledIntervals = this.featureSource.alignmentContainer.downsampledIntervals,
@@ -837,13 +942,91 @@ var igv = (function (igv) {
 
         if (clickedObject) {
             return clickedObject.popupData(genomicLocation);
-        }
-        else {
+        } else {
             return [];
         }
 
     };
 
+    AlignmentTrack.prototype.popupMenuItemList = function (config) {
+
+        var alignment,
+            loci,
+            mateLoci,
+            index,
+            head,
+            tail;
+
+        this.highlightedAlignmentReadNamed = undefined;
+
+        config.popover.hide();
+
+        alignment = this.getClickedAlignment(config.viewport, config.genomicLocation);
+
+        if (alignment) {
+
+            this.highlightedAlignmentReadNamed = alignment.readName;
+
+            loci = _.map(igv.browser.genomicStateList, function(gs) {
+                return gs.locusSearchString;
+            });
+
+            index = config.viewport.genomicState.locusIndex;
+            head = _.first(loci, 1 + index);
+            tail = _.size(loci) === 1 ? undefined : _.last(loci, _.size(loci) - (1 + index));
+
+            mateLoci = locusPairWithAlignmentAndViewport(alignment, config.viewport);
+
+            // discard last element of head and replace with mateLoci
+            head.splice(-1, 1);
+            Array.prototype.push.apply(head, mateLoci);
+            if (tail) {
+                Array.prototype.push.apply(head, tail);
+            }
+
+            igv.browser.parseSearchInput( head.join(' ') );
+        }
+
+        function locusPairWithAlignmentAndViewport(alignment, viewport) {
+            var left,
+                right,
+                centroid,
+                widthBP;
+
+            widthBP = viewport.$viewport.width() * viewport.genomicState.referenceFrame.bpPerPixel;
+
+            centroid = (alignment.start + (alignment.start + alignment.lengthOnRef)) / 2;
+            left = alignment.chr + ':' + Math.round(centroid - widthBP/2.0).toString() + '-' + Math.round(centroid + widthBP/2.0).toString();
+
+            centroid = (alignment.mate.position + (alignment.mate.position + alignment.lengthOnRef)) / 2;
+            right = alignment.chr + ':' + Math.round(centroid - widthBP/2.0).toString() + '-' + Math.round(centroid + widthBP/2.0).toString();
+
+            return [ left, right ];
+        }
+    };
+
+    AlignmentTrack.prototype.getClickedAlignment = function (viewport, genomicLocation) {
+
+        var packedAlignmentRows,
+            row,
+            index,
+            clicked;
+
+        packedAlignmentRows = viewport.drawConfiguration.features.packedAlignmentRows;
+
+        clicked = undefined;
+        _.each(packedAlignmentRows, function (row) {
+
+            if (undefined === clicked) {
+                clicked = _.filter(row.alignments, function(alignment) {
+                    return (alignment.isPaired() && alignment.isMateMapped() && alignment.start <= genomicLocation && (alignment.start + alignment.lengthOnRef >= genomicLocation));
+                });
+            } // if (undefined === clicked)
+
+        });
+
+        return clicked ? _.first(clicked) : undefined;
+    };
 
     function getAlignmentColor(alignment) {
 
@@ -852,15 +1035,15 @@ var igv = (function (igv) {
             tagValue, color,
             strand;
 
-        color = alignmentTrack.parent.color; // default
+        color = alignmentTrack.parent.color;
 
         switch (option) {
 
             case "strand":
                 color = alignment.strand ? alignmentTrack.posStrandColor : alignmentTrack.negStrandColor;
                 break;
-            case "firstOfPairStrand":
 
+            case "firstOfPairStrand":
                 if(alignment instanceof igv.PairedAlignment) {
                     color = alignment.firstOfPairStrand() ? alignmentTrack.posStrandColor : alignmentTrack.negStrandColor;
                 }
@@ -879,7 +1062,6 @@ var igv = (function (igv) {
                 break;
 
             case "tag":
-
                 tagValue = alignment.tags()[alignmentTrack.colorByTag];
                 if (tagValue !== undefined) {
 
@@ -892,13 +1074,14 @@ var igv = (function (igv) {
                     }
                 }
                 break;
+
             default:
                 color = alignmentTrack.parent.color;
         }
+
         return color;
 
-    };
-
+    }
 
     return igv;
 

@@ -26,6 +26,7 @@
 var igv = (function (igv) {
 
     igv.SequenceTrack = function (config) {
+        this.config = config;
         this.name = "";
         this.id = "sequence";
         this.sequenceType = config.sequenceType || "dna";             //   dna | rna | prot
@@ -33,24 +34,25 @@ var igv = (function (igv) {
         this.disableButtons = true;
         this.order = config.order || 9999;
         this.ignoreTrackMenu = true;
+        this.supportsWholeGenome = false;
     };
 
-    igv.SequenceTrack.prototype.getFeatures = function (chr, bpStart, bpEnd) {
+    igv.SequenceTrack.prototype.getFeatures = function (chr, bpStart, bpEnd, bpPerPixel) {
 
         return new Promise(function (fulfill, reject) {
-            if (igv.browser.referenceFrame.bpPerPixel > 1/*igv.browser.trackViewportWidthBP() > 30000*/) {
+            if (bpPerPixel &&  bpPerPixel > 1) {
                 fulfill(null);
-            }
-            else {
+            } else {
                 igv.browser.genome.sequence.getSequence(chr, bpStart, bpEnd).then(fulfill).catch(reject);
             }
         });
-    }
+    };
 
 
     igv.SequenceTrack.prototype.draw = function (options) {
 
-        var sequence = options.features,
+        var self = this,
+            sequence = options.features,
             ctx = options.context,
             bpPerPixel = options.bpPerPixel,
             bpStart = options.bpStart,
@@ -87,16 +89,10 @@ var igv = (function (igv) {
                     if (!c) c = "gray";
 
                     if (bpPerPixel > 1 / 10) {
-
-                        igv.graphics.fillRect(ctx, p0, 0, p1 - p0, 10, {fillStyle: c});
+                        igv.graphics.fillRect(ctx, p0, 0, p1 - p0, self.height, { fillStyle: c });
                     }
                     else {
-
-                        igv.graphics.strokeText(ctx, b, pc, y, {
-                            strokeStyle: c,
-                            font: 'normal 10px Arial',
-                            textAlign: 'center'
-                        });
+                        igv.graphics.strokeText(ctx, b, pc, 3 + y, { strokeStyle: c });
                     }
                 }
             }

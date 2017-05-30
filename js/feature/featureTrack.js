@@ -44,11 +44,15 @@ var igv = (function (igv) {
         }
         this.maxRows = config.maxRows;
 
-
-        if (config.url && (config.url.toLowerCase().endsWith(".bigbed") || config.url.toLowerCase().endsWith(".bb"))) {
+        if ( config.url &&
+            (
+                igv.filenameOrURLHasSuffix(config.url, '.bigbed') || igv.filenameOrURLHasSuffix(config.url, '.bb')
+                ||
+                igv.filenameOrURLHasSuffix(config.url, '.bigwig') || igv.filenameOrURLHasSuffix(config.url, '.bw')
+            )
+        ) {
             this.featureSource = new igv.BWSource(config);
-        }
-        else {
+        } else {
             this.featureSource = new igv.FeatureSource(config);
         }
 
@@ -72,26 +76,32 @@ var igv = (function (igv) {
             // adjust label positions to make sure they're always visible
             monitorTrackDrag(this);
         }
+
     };
 
     igv.FeatureTrack.prototype.getFileHeader = function () {
         var self = this;
         return new Promise(function (fulfill, reject) {
             if (typeof self.featureSource.getFileHeader === "function") {
-                self.featureSource.getFileHeader().then(function (header) {
+                self.featureSource
+                    .getFileHeader()
+                    .then(function (header) {
 
-                    if (header) {
-                        // Header (from track line).  Set properties,unless set in the config (config takes precedence)
-                        if (header.name && !self.config.name) {
-                            self.name = header.name;
+                        if (header) {
+                            // Header (from track line).  Set properties,unless set in the config (config takes precedence)
+                            if (header.name && !self.config.name) {
+                                self.name = header.name;
+                            }
+                            if (header.color && !self.config.color) {
+                                self.color = "rgb(" + header.color + ")";
+                            }
                         }
-                        if (header.color && !self.config.color) {
-                            self.color = "rgb(" + header.color + ")";
-                        }
-                    }
-                    fulfill(header);
+                        fulfill(header);
 
-                }).catch(reject);
+                    })
+                    .catch(function (error) {
+                        reject(error);
+                    });
             }
             else {
                 fulfill(null);
@@ -99,13 +109,13 @@ var igv = (function (igv) {
         });
     };
 
-    igv.FeatureTrack.prototype.getFeatures = function (chr, bpStart, bpEnd) {
+    igv.FeatureTrack.prototype.getFeatures = function (chr, bpStart, bpEnd, bpPerPixel) {
 
         var self = this;
 
         return new Promise(function (fulfill, reject) {
 
-            self.featureSource.getFeatures(chr, bpStart, bpEnd).then(fulfill).catch(reject);
+            self.featureSource.getFeatures(chr, bpStart, bpEnd, bpPerPixel).then(fulfill).catch(reject);
 
         });
     };
@@ -132,7 +142,7 @@ var igv = (function (igv) {
 
                 });
             }
-            return Math.max(this.variantHeight, (maxRow + 1) * (this.displayMode === "SQUISHED" ? this.expandedCallHeight : this.squishedCallHeight));
+            return Math.max(this.variantHeight, (maxRow + 1) * (this.displayMode === "SQUISHED" ? this.squishedCallHeight : this.expandedCallHeight));
 
         }
 
@@ -147,18 +157,35 @@ var igv = (function (igv) {
             bpStart = options.bpStart,
             pixelWidth = options.pixelWidth,
             pixelHeight = options.pixelHeight,
-            bpEnd = bpStart + pixelWidth * bpPerPixel + 1;
+            bpEnd = bpStart + pixelWidth * bpPerPixel + 1,
+            selectedFeatureName,
+            selectedFeature,
+            c;
 
         igv.graphics.fillRect(ctx, 0, 0, pixelWidth, pixelHeight, {'fillStyle': "rgb(255, 255, 255)"});
 
-
         if (featureList) {
+
+            selectedFeatureName = igv.FeatureTrack.selectedGene ? igv.FeatureTrack.selectedGene.toUpperCase() : undefined;
 
             for (var gene, i = 0, len = featureList.length; i < len; i++) {
                 gene = featureList[i];
                 if (gene.end < bpStart) continue;
                 if (gene.start > bpEnd) break;
-                track.render.call(this, gene, bpStart, bpPerPixel, pixelHeight, ctx);
+
+                if(!selectedFeature && selectedFeatureName && selectedFeatureName === gene.name.toUpperCase()) {
+                    selectedFeature = gene;
+                }
+                else {
+                    track.render.call(this, gene, bpStart, bpPerPixel, pixelHeight, ctx, options);
+                }
+            }
+
+            if(selectedFeature) {
+                c = selectedFeature.color;
+                selectedFeature.color = "rgb(255,0,0)";
+                track.render.call(this, selectedFeature, bpStart, bpPerPixel, pixelHeight, ctx, options);
+                selectedFeature.color = c;
             }
         }
         else {
@@ -167,22 +194,27 @@ var igv = (function (igv) {
 
     };
 
+
+    igv.FeatureTrack.prototype.popupDataWithConfiguration = function (config) {
+        return this.popupData(config.genomicLocation, config.x, config.y, config.viewport.genomicState.referenceFrame)
+    };
+
     /**
      * Return "popup data" for feature @ genomic location.  Data is an array of key-value pairs
      */
-    igv.FeatureTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset) {
+    igv.FeatureTrack.prototype.popupData = function (genomicLocation, xOffset, yOffset, referenceFrame) {
 
         // We use the featureCache property rather than method to avoid async load.  If the
         // feature is not already loaded this won't work,  but the user wouldn't be mousing over it either.
         if (this.featureSource.featureCache) {
 
-            var chr = igv.browser.referenceFrame.chr,  // TODO -- this should be passed in
-                tolerance = 2 * igv.browser.referenceFrame.bpPerPixel,  // We need some tolerance around genomicLocation, start with +/- 2 pixels
+            var chr = referenceFrame.chrName,
+                tolerance = 2 * referenceFrame.bpPerPixel,  // We need some tolerance around genomicLocation, start with +/- 2 pixels
                 featureList = this.featureSource.featureCache.queryFeatures(chr, genomicLocation - tolerance, genomicLocation + tolerance),
                 row;
 
-            if (this.displayMode != "COLLAPSED") {
-                row = (Math.floor)(this.displayMode === "SQUISHED" ? yOffset / this.expandedCallHeight : yOffset / this.squishedCallHeight);
+            if ('COLLAPSED' !== this.displayMode) {
+                row = 'SQUISHED' === this.displayMode ? Math.floor(yOffset / this.squishedCallHeight) : Math.floor(yOffset / this.expandedCallHeight);
             }
 
             if (featureList && featureList.length > 0) {
@@ -195,7 +227,7 @@ var igv = (function (igv) {
 
                         // If row number is specified use it
                         if (row === undefined || feature.row === undefined || row === feature.row) {
-                            var featureData
+                            var featureData;
                             if (feature.popupData) {
                                 featureData = feature.popupData(genomicLocation);
                             }
@@ -238,36 +270,47 @@ var igv = (function (igv) {
         return data;
     }
 
-    igv.FeatureTrack.prototype.popupMenuItems = function (popover) {
+    igv.FeatureTrack.prototype.menuItemList = function (popover) {
 
-        var myself = this,
+        var self = this,
             menuItems = [],
-            lut = {"COLLAPSED": "Collapse", "SQUISHED": "Squish", "EXPANDED": "Expand"},
-            checkMark = '<i class="fa fa-check fa-check-shim"></i>',
-            checkMarkNone = '<i class="fa fa-check fa-check-shim fa-check-hidden"></i>',
-            trackMenuItem = '<div class=\"igv-track-menu-item\">',
-            trackMenuItemFirst = '<div class=\"igv-track-menu-item igv-track-menu-border-top\">';
+            mapped;
 
         menuItems.push(igv.colorPickerMenuItem(popover, this.trackView));
 
-        ["COLLAPSED", "SQUISHED", "EXPANDED"].forEach(function (displayMode, index) {
-
-            var chosen,
-                str;
-
-            chosen = (0 === index) ? trackMenuItemFirst : trackMenuItem;
-            str = (displayMode === myself.displayMode) ? chosen + checkMark + lut[displayMode] + '</div>' : chosen + checkMarkNone + lut[displayMode] + '</div>';
-
-            menuItems.push({
-                object: $(str),
+        mapped = _.map(["COLLAPSED", "SQUISHED", "EXPANDED"], function(displayMode, index) {
+            return {
+                object: $(markupStringified(displayMode, index, self.displayMode)),
                 click: function () {
                     popover.hide();
-                    myself.displayMode = displayMode;
-                    myself.trackView.update();
+                    self.displayMode = displayMode;
+                    self.trackView.update();
                 }
-            });
-
+            };
         });
+
+        menuItems = menuItems.concat(mapped);
+
+        function markupStringified(displayMode, index, selfDisplayMode) {
+
+            var lut,
+                chosen;
+
+            lut =
+                {
+                    "COLLAPSED": "Collapse",
+                    "SQUISHED": "Squish",
+                    "EXPANDED": "Expand"
+                };
+
+            chosen = (0 === index) ? '<div class="igv-track-menu-border-top">' : '<div">';
+            if (displayMode === selfDisplayMode) {
+                return chosen + '<i class="fa fa-check fa-check-shim"></i>' + lut[ displayMode ] + '</div>'
+            } else {
+                return chosen + '<i class="fa fa-check fa-check-shim fa-check-hidden"></i>' + lut[ displayMode ] + '</div>';
+            }
+
+        }
 
         return menuItems;
 
@@ -303,8 +346,9 @@ var igv = (function (igv) {
      * @param xScale  scale in base-pairs per pixel
      * @param pixelHeight  pixel height of the current canvas
      * @param ctx  the canvas 2d context
+     * @param options  genomic state
      */
-    function renderFeature(feature, bpStart, xScale, pixelHeight, ctx) {
+    function renderFeature(feature, bpStart, xScale, pixelHeight, ctx, options) {
 
         var x, e, exonCount, cy, direction, exon, ePx, ePx1, ePxU, ePw, py2, h2, py,
             windowX, windowX1,
@@ -328,10 +372,10 @@ var igv = (function (igv) {
         ctx.fillStyle = color;
         ctx.strokeStyle = color;
 
-        if (this.displayMode === "SQUISHED" && feature.row != undefined) {
+        if (this.displayMode === "SQUISHED" && feature.row !== undefined) {
             h = this.featureHeight / 2;
             py = this.expandedCallHeight * feature.row + 2;
-        } else if (this.displayMode === "EXPANDED" && feature.row != undefined) {
+        } else if (this.displayMode === "EXPANDED" && feature.row !== undefined) {
             py = this.squishedCallHeight * feature.row + 5;
         } else {  // collapsed
             py = 5;
@@ -343,7 +387,7 @@ var igv = (function (igv) {
 
         exonCount = feature.exons ? feature.exons.length : 0;
 
-        if (exonCount == 0) {
+        if (exonCount === 0) {
             // single-exon transcript
             ctx.fillRect(coord.px, py, coord.pw, h);
 
@@ -352,7 +396,7 @@ var igv = (function (igv) {
             // multi-exon transcript
             igv.graphics.strokeLine(ctx, coord.px + 1, cy, coord.px1 - 1, cy); // center line for introns
 
-            direction = feature.strand == '+' ? 1 : -1;
+            direction = feature.strand === '+' ? 1 : -1;
             for (x = coord.px + step / 2; x < coord.px1; x += step) {
                 // draw arrowheads along central line indicating transcribed orientation
                 igv.graphics.strokeLine(ctx, x - direction * 2, cy - 2, x, cy);
@@ -401,10 +445,10 @@ var igv = (function (igv) {
                 }
             }
         }
-        windowX = Math.round(igv.browser.referenceFrame.toPixels(igv.browser.referenceFrame.start - bpStart));
-        windowX1 = windowX + igv.browser.trackViewportWidth();
+        windowX = Math.round(options.viewportContainerX);
+        windowX1 = windowX + options.viewportContainerWidth / (options.genomicState.locusCount || 1);
 
-        renderFeatureLabels.call(this, ctx, feature, coord.px, coord.px1, py, windowX, windowX1);
+        renderFeatureLabels.call(this, ctx, feature, coord.px, coord.px1, py, windowX, windowX1, options.genomicState, options);
     }
 
     /**
@@ -415,12 +459,16 @@ var igv = (function (igv) {
      * @param featureY  feature y-coordinate
      * @param windowX   visible window start x-coordinate
      * @param windowX1  visible window end x-coordinate
+     * @param genomicState  genomic state
+     * @param options  options
      */
-    function renderFeatureLabels(ctx, feature, featureX, featureX1, featureY, windowX, windowX1) {
+    function renderFeatureLabels(ctx, feature, featureX, featureX1, featureY, windowX, windowX1, genomicState, options) {
+
         var geneColor, geneFontStyle, transform,
             boxX, boxX1,    // label should be centered between these two x-coordinates
             labelX, labelY,
-            textFitsInBox;
+            textFitsInBox,
+            selectedFeatureName = igv.FeatureTrack.selectedGene ? igv.FeatureTrack.selectedGene.toUpperCase() : undefined;
 
         // feature outside of viewable window
         if (featureX1 < windowX || featureX > windowX1) {
@@ -432,19 +480,22 @@ var igv = (function (igv) {
             boxX1 = Math.min(featureX1, windowX1);
         }
 
-        if (igv.browser.selection && "genes" === this.config.type && feature.name !== undefined) {
+        if (genomicState.selection && "genes" === this.config.type && feature.name !== undefined) {
             // TODO -- for gtex, figure out a better way to do this
-            geneColor = igv.browser.selection.colorForGene(feature.name);
+            geneColor = genomicState.selection.colorForGene(feature.name);
         }
+
+
 
         textFitsInBox = (boxX1 - boxX) > ctx.measureText(feature.name).width;
 
-        if ((textFitsInBox || geneColor) && this.displayMode != "SQUISHED" && feature.name !== undefined) {
+        if ( (feature.name !== undefined && feature.name.toUpperCase() === selectedFeatureName) ||
+            ((textFitsInBox || geneColor) && this.displayMode !== "SQUISHED" && feature.name !== undefined)) {
             geneFontStyle = {
                 font: '10px PT Sans',
                 textAlign: 'center',
-                fillStyle: geneColor || this.color,
-                strokeStyle: geneColor || this.color
+                fillStyle: geneColor || feature.color || this.color,
+                strokeStyle: geneColor || feature.color || this.color
             };
 
             if (this.displayMode === "COLLAPSED" && this.labelDisplayMode === "SLANT") {
@@ -455,7 +506,19 @@ var igv = (function (igv) {
             labelX = boxX + ((boxX1 - boxX) / 2);
             labelY = getFeatureLabelY(featureY, transform);
 
-            igv.graphics.fillText(ctx, feature.name, labelX, labelY, geneFontStyle, transform);
+            // TODO: This is for compatibility with JuiceboxJS. The transform param is currently
+            // TODO: not supported.
+            if (options.labelTransform) {
+
+                ctx.save();
+                options.labelTransform(ctx, labelX);
+                igv.graphics.fillText(ctx, feature.name, labelX, labelY, geneFontStyle, undefined);
+                ctx.restore();
+
+            } else {
+                igv.graphics.fillText(ctx, feature.name, labelX, labelY, geneFontStyle, transform);
+            }
+
         }
     }
 
@@ -476,14 +539,16 @@ var igv = (function (igv) {
         }
 
         var unSubscribe = function (removedTrack) {
-            if (track === removedTrack) {
+            if (igv.browser.un && track === removedTrack) {
                 igv.browser.un('trackdrag', onDragEnd);
                 igv.browser.un('trackremoved', unSubscribe);
             }
         };
 
-        igv.browser.on('trackdragend', onDragEnd);
-        igv.browser.on('trackremoved', unSubscribe);
+        if (igv.browser.on) {
+            igv.browser.on('trackdragend', onDragEnd);
+            igv.browser.on('trackremoved', unSubscribe);
+        }
     }
 
     /**

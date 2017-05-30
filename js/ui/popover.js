@@ -28,147 +28,194 @@
  */
 var igv = (function (igv) {
 
-    igv.Popover = function ($parent, id) {
+    igv.Popover = function ($parent) {
 
-        this.markupWith$Parent($parent, id);
+        this.$parent = this.initializationHelper($parent);
 
-        this.$popoverContent.kinetic({});
+        // this.$popoverContent.kinetic({});
 
     };
 
-    igv.Popover.prototype.markupWith$Parent = function ($parent, id) {
+    igv.Popover.prototype.initializationHelper = function ($parent) {
 
         var self = this,
-            popoverHeader;
-
-        if (this.$parent) {
-            return;
-        }
-
-        this.$parent = $parent;
+            $popoverHeader;
 
         // popover container
-        this.popover = $('<div class="igv-popover">');
-        if (id) {
-            this.popover.attr("id", id);
-        }
+        this.$popover = $('<div class="igv-popover">');
 
-        this.$parent.append(this.popover[ 0 ]);
+        $parent.append(this.$popover);
 
         // popover header
-        popoverHeader = $('<div class="igv-popoverHeader">');
-        this.popover.append(popoverHeader[ 0 ]);
+        $popoverHeader = $('<div class="igv-popover-header">');
+        this.$popover.append($popoverHeader);
 
-        igv.dialogCloseWithParentObject(popoverHeader, function () {
+        igv.attachDialogCloseHandlerWithParent($popoverHeader, function () {
             self.hide();
         });
 
         // popover content
         this.$popoverContent = $('<div>');
 
-        this.popover.append(this.$popoverContent[ 0 ]);
+        this.$popover.append(this.$popoverContent);
 
-        this.popover.draggable();
+        this.$popover.draggable( { handle: $popoverHeader } );
 
-    };
+        return $parent;
 
-    igv.Popover.prototype.testData = function (rows) {
-        var i,
-            name,
-            nameValues = [];
-
-        for (i = 0; i < rows; i++) {
-            name = "name " + i;
-            nameValues.push({ name: name, value: "verbsgohuman" });
-        }
-
-        return nameValues;
     };
 
     igv.Popover.prototype.hide = function () {
-        this.popover.hide();
+        this.$popover.hide();
     };
 
-    igv.Popover.prototype.presentTrackMenu = function (pageX, pageY, trackView) {
+    igv.Popover.prototype.presentTrackGearMenu = function (pageX, pageY, trackView) {
 
-        var $container = $('<div class="igv-track-menu-container">'),
-            trackMenuItems = igv.trackMenuItems(this, trackView);
+        var $container,
+            items;
 
-        trackMenuItems.forEach(function (trackMenuItem, index, tmi) {
-            if (trackMenuItem.object) {
-                var ob = trackMenuItem.object;
-                $container.append(ob[ 0 ]);
-            } else {
-                $container.append(trackMenuItem)
-            }
-        });
+        items = igv.trackMenuItemList(this, trackView);
+        if (_.size(items) > 0) {
 
-        this.$popoverContent.empty();
+            this.$popoverContent.empty();
+            this.$popoverContent.removeClass("igv-popover-track-popup-content");
 
-        this.$popoverContent.removeClass("igv-popoverTrackPopupContent");
-        this.$popoverContent.append($container[ 0 ]);
+            $container = $('<div class="igv-track-menu-container">');
+            this.$popoverContent.append($container);
 
-        // Attach click handler AFTER inserting markup in DOM.
-        // Insertion beforehand will cause it to have NO effect
-        // when clicked.
-        trackMenuItems.forEach(function (trackMenuItem) {
+            _.each(items, function(item) {
 
-            var ob = trackMenuItem.object,
-                cl = trackMenuItem.click,
-                init = trackMenuItem.init;
+                if (item.init) {
+                    item.init();
+                }
 
-            if (cl) {
-                ob.click(cl);
-            }
+                $container.append(item.object);
 
-            if (init) {
-                init();
-            }
+            });
 
-        });
+            this.$popover.css(clampPopoverLocation(pageX, pageY, this));
+            this.$popover.show();
+            this.$popover.offset( igv.constrainBBox(this.$popover, $(igv.browser.trackContainerDiv)) );
 
-        this.popover.css(popoverPosition(pageX, pageY, this));
+        }
+    };
 
-        this.popover.show();
+    igv.Popover.prototype.presentTrackPopupMenu = function (e, viewport) {
 
-        this.popover.offset( igv.constrainBBox(this.popover, $(igv.browser.trackContainerDiv)) );
+        var track = viewport.trackView.track,
+            trackLocationState,
+            $container,
+            menuItems;
+
+        trackLocationState = createTrackLocationState(e, viewport);
+
+        if (undefined === trackLocationState) {
+            return
+        }
+
+        menuItems = igv.trackPopupMenuItemList(this, viewport, trackLocationState.genomicLocation, trackLocationState.x, trackLocationState.y);
+
+        if (_.size(menuItems) > 0) {
+
+            this.$popoverContent.empty();
+            this.$popoverContent.removeClass("igv-popover-track-popup-content");
+
+            $container = $('<div class="igv-track-menu-container">');
+            this.$popoverContent.append($container);
+
+            _.each(menuItems, function(item) {
+                $container.append(item.object);
+            });
+
+            this.$popover.css(clampPopoverLocation(e.pageX, e.pageY, this));
+            this.$popover.show();
+        }
 
     };
 
-    igv.Popover.prototype.presentTrackPopup = function (pageX, pageY, content, showOKButton) {
+    igv.Popover.prototype.presentTrackPopup = function (e, viewport) {
 
-        var self = this,
-            ok_button,
-            markup;
+        var track = viewport.trackView.track,
+            referenceFrame = viewport.genomicState.referenceFrame,
+            trackLocationState,
+            dataList,
+            popupClickHandlerResult,
+            content,
+            config;
 
-        if (!content) {
+        trackLocationState = createTrackLocationState(e, viewport);
+        if (undefined === trackLocationState) {
+            return
+        }
+
+        // dataList = track.popupData(trackLocationState.genomicLocation, trackLocationState.x, trackLocationState.y, referenceFrame);
+
+        config =
+            {
+                popover: this,
+                viewport:viewport,
+                genomicLocation: trackLocationState.genomicLocation,
+                x: trackLocationState.x,
+                y: trackLocationState.y
+            };
+        dataList = track.popupDataWithConfiguration(config);
+
+        popupClickHandlerResult = igv.browser.fireEvent('trackclick', [track, dataList]);
+
+        if (undefined === popupClickHandlerResult) {
+
+            if (_.size(dataList) > 0) {
+                content = igv.formatPopoverText(dataList);
+            }
+
+        } else if (typeof popupClickHandlerResult === 'string') {
+            content = popupClickHandlerResult;
+        }
+
+        this.presentContent(e.pageX, e.pageY, content);
+
+    };
+
+    igv.Popover.prototype.presentContent = function (pageX, pageY, content) {
+        var $container;
+
+        if (undefined === content) {
             return;
         }
 
-        markup = content;
-        if (true === showOKButton) {
-            ok_button = '<button name="button" class="igv-popover-ok-button">OK</button>';
-            markup = content + ok_button;
-        }
+        this.$popoverContent.empty();
+        this.$popoverContent.addClass("igv-popover-track-popup-content");
 
-        this.$popoverContent.addClass("igv-popoverTrackPopupContent");
+        $container = $('<div class="igv-track-menu-container">');
+        this.$popoverContent.append($container);
+        this.$popoverContent.html(content);
 
-        this.$popoverContent.html(markup);
-
-        this.popover.css(popoverPosition(pageX, pageY, this)).show();
-
-        if (true === showOKButton) {
-            $('.igv-dialog-close-container').hide();
-            $('.igv-popover-ok-button').click(function(){
-                self.hide();
-            });
-        } else {
-            $('.igv-dialog-close-container').show();
-        }
+        this.$popover.css(clampPopoverLocation(pageX, pageY, this));
+        this.$popover.show();
 
     };
 
-    function popoverPosition(pageX, pageY, popoverWidget) {
+    function createTrackLocationState(e, viewport) {
+
+        var referenceFrame = viewport.genomicState.referenceFrame,
+            genomicLocation,
+            canvasCoords,
+            xOrigin;
+
+        canvasCoords = igv.translateMouseCoordinates(e, viewport.canvas);
+        genomicLocation = Math.floor((referenceFrame.start) + referenceFrame.toBP(canvasCoords.x));
+
+        if (undefined === genomicLocation || null === viewport.tile) {
+            return undefined;
+        }
+
+        xOrigin = Math.round(referenceFrame.toPixels((viewport.tile.startBP - referenceFrame.start)));
+
+        return { genomicLocation: genomicLocation, x: canvasCoords.x - xOrigin, y: canvasCoords.y }
+
+    }
+
+    function clampPopoverLocation(pageX, pageY, popover) {
 
         var left,
             containerCoordinates = { x: pageX, y: pageY },
@@ -177,9 +224,9 @@ var igv = (function (igv) {
             popupX = pageX,
             popupY = pageY;
 
-        popupX -= popoverWidget.$parent.offset().left;
-        popupY -= popoverWidget.$parent.offset().top;
-        popupRect = { x: popupX, y: popupY, width: popoverWidget.popover.outerWidth(), height: popoverWidget.popover.outerHeight() };
+        popupX -= popover.$parent.offset().left;
+        popupY -= popover.$parent.offset().top;
+        popupRect = { x: popupX, y: popupY, width: popover.$popover.outerWidth(), height: popover.$popover.outerHeight() };
 
         left = popupX;
         if (containerCoordinates.x + popupRect.width > containerRect.width) {

@@ -33,78 +33,109 @@ var igv = (function (igv) {
         this.config = config;
         this.url = config.url;
 
+        if (config.color === undefined) config.color = "rgb(150,150,150)";   // Hack -- should set a default color per track type
+
+        igv.configTrack(this, config);
+
         if ("bigwig" === config.format) {
             this.featureSource = new igv.BWSource(config);
-        }
-        else {
+        } else if ("tdf" === config.format) {
+            this.featureSource = new igv.TDFSource(config);
+        } else {
             this.featureSource = new igv.FeatureSource(config);
         }
 
-        this.name = config.name;
-        this.color = config.color || "rgb(150,150,150)";
-        this.autoScale = config.autoScale  !== undefined ? config.autoScale :
-            (config.max === undefined ? true : false);
-
-        this.height = 100;
-        this.order = config.order;
-
         // Min and max values.  No defaults for these, if they aren't set track will autoscale.
-        this.dataRange = {
-            min: config.min,
-            max: config.max
+        this.autoscale = config.autoscale;
+
+        if(config.max) {
+            this.dataRange = {
+                min: config.min || 0,
+                max: config.max
+            }
         };
 
         this.paintAxis = igv.paintAxis;
 
     };
 
-    igv.WIGTrack.prototype.getFeatures = function (chr, bpStart, bpEnd) {
+    igv.WIGTrack.prototype.getFeatures = function (chr, bpStart, bpEnd, bpPerPixel) {
 
         var self = this;
         return new Promise(function (fulfill, reject) {
-            self.featureSource.getFeatures(chr, bpStart, bpEnd).then(fulfill).catch(reject);
+            self.featureSource.getFeatures(chr, bpStart, bpEnd, bpPerPixel).then(fulfill).catch(reject);
         });
     };
 
-    igv.WIGTrack.prototype.popupMenuItems = function (popover) {
+    igv.WIGTrack.prototype.menuItemList = function (popover) {
 
         var self = this,
-            menuItems = [],
-            html = [];
+            menuItems = [];
 
         menuItems.push(igv.colorPickerMenuItem(popover, this.trackView));
+
         menuItems.push(igv.dataRangeMenuItem(popover, this.trackView));
 
-        //html.push('<div class="igv-track-menu-item igv-track-menu-border-top">');
-        html.push('<div class="igv-track-menu-item">');
-        html.push(true === self.autoScale ? '<i class="fa fa-check fa-check-shim">' : '<i class="fa fa-check fa-check-shim fa-check-hidden">');
-        html.push('</i>');
-        html.push('Autoscale');
-        html.push('</div>');
-
         menuItems.push({
-            object: $(html.join('')),
+            object: $(htmlStringified(self.autoscale)),
             click: function () {
                 var $fa = $(this).find('i');
 
                 popover.hide();
 
-                self.autoScale = !self.autoScale;
+                self.autoscale = !self.autoscale;
 
-                if (true === self.autoScale) {
+                if (true === self.autoscale) {
                     $fa.removeClass('fa-check-hidden');
                 } else {
                     $fa.addClass('fa-check-hidden');
                 }
 
-                // do stuff
-
                 self.trackView.update();
             }
         });
 
+        function htmlStringified(autoscale) {
+            var html = [];
+
+            html.push('<div>');
+            html.push(true === autoscale ? '<i class="fa fa-check">' : '<i class="fa fa-check fa-check-hidden">');
+            html.push('</i>');
+            html.push('Autoscale');
+            html.push('</div>');
+
+            return html.join('');
+        }
+
         return menuItems;
 
+    };
+
+    igv.WIGTrack.prototype.getFileHeader = function () {
+
+        var self = this;
+        return new Promise(function (fulfill, reject) {
+            if (typeof self.featureSource.getFileHeader === "function") {
+
+                self.featureSource.getFileHeader().then(function (header) {
+
+                    if (header) {
+                        // Header (from track line).  Set properties,unless set in the config (config takes precedence)
+                        if (header.name && !self.config.name) {
+                            self.name = header.name;
+                        }
+                        if (header.color && !self.config.color) {
+                            self.color = "rgb(" + header.color + ")";
+                        }
+                    }
+                    fulfill(header);
+
+                }).catch(reject);
+            }
+            else {
+                fulfill(null);
+            }
+        });
     };
 
     igv.WIGTrack.prototype.draw = function (options) {
@@ -120,14 +151,18 @@ var igv = (function (igv) {
             featureValueMinimum,
             featureValueMaximum,
             featureValueRange,
-            $dataRangeTrackLabel,
-            str,
-            min,
-            max;
+            defaultRange;
 
 
         if (features && features.length > 0) {
-            if (self.autoScale || self.dataRange.max === undefined) {
+            if(self.autoscale === undefined && self.dataRange === undefined && (typeof self.featureSource.getDefaultRange === "function")) {
+                defaultRange = self.featureSource.getDefaultRange();
+                if(!isNaN(defaultRange.min) && !isNaN(defaultRange.max)) {
+                    self.dataRange = defaultRange;
+                    console.log("Range= " + defaultRange.min + " - " + defaultRange.max);
+                }
+            }
+            if (self.autoscale || self.dataRange === undefined) {
                 var s = autoscale(features);
                 featureValueMinimum = s.min;
                 featureValueMaximum = s.max;
@@ -136,18 +171,15 @@ var igv = (function (igv) {
                 featureValueMinimum = self.dataRange.min === undefined ? 0 : self.dataRange.min;
                 featureValueMaximum = self.dataRange.max;
             }
+
+            if (undefined === self.dataRange) {
+                self.dataRange = {};
+            }
+
             self.dataRange.min = featureValueMinimum;  // Record for disply, menu, etc
             self.dataRange.max = featureValueMaximum;
 
             featureValueRange = featureValueMaximum - featureValueMinimum;
-
-            //$dataRangeTrackLabel = $(this.trackView.trackDiv).find('.igv-data-range-track-label');
-            //
-            //min = (Math.floor(track.dataRange.min) === track.dataRange.min) ? track.dataRange.min : track.dataRange.min.toFixed(2);
-            //max = (Math.floor(track.dataRange.max) === track.dataRange.max) ? track.dataRange.max : track.dataRange.max.toFixed(2);
-            //str = '[' + min + ' - ' + max + ']';
-            //
-            //$dataRangeTrackLabel.text(str);
 
             features.forEach(renderFeature);
         }
@@ -207,8 +239,10 @@ var igv = (function (igv) {
             max = -Number.MAX_VALUE;
 
         features.forEach(function (f) {
-            min = Math.min(min, f.value);
-            max = Math.max(max, f.value);
+            if(!Number.isNaN(f.value)) {
+                min = Math.min(min, f.value);
+                max = Math.max(max, f.value);
+            }
         });
 
         return {min: min, max: max};
@@ -218,7 +252,6 @@ var igv = (function (igv) {
     function signsDiffer(a, b) {
         return (a > 0 && b < 0 || a < 0 && b > 0);
     }
-
 
 
     return igv;

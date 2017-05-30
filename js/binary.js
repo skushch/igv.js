@@ -35,7 +35,7 @@ var igv = (function (igv) {
         this.length = dataView.byteLength;
     }
 
-    igv.BinaryParser.prototype.remLength = function() {
+    igv.BinaryParser.prototype.remLength = function () {
         return this.length - this.position;
     }
 
@@ -52,6 +52,19 @@ var igv = (function (igv) {
     igv.BinaryParser.prototype.getShort = function () {
 
         var retValue = this.view.getInt16(this.position, this.littleEndian);
+        this.position += 2
+        return retValue;
+    }
+
+    igv.BinaryParser.prototype.getUShort = function () {
+
+        // var byte1 = this.getByte(),
+        //     byte2 = this.getByte(),
+        //     retValue = ((byte2 << 24 >>> 16) + (byte1 << 24 >>> 24));
+        //     return retValue;
+
+       //
+        var retValue = this.view.getUint16 (this.position, this.littleEndian);
         this.position += 2
         return retValue;
     }
@@ -73,23 +86,32 @@ var igv = (function (igv) {
 
     igv.BinaryParser.prototype.getLong = function () {
 
-//        return this.view.getInt32(this.position += 8);
-        var byte1 = this.view.getUint8(this.position++) & 0xff;
-        var byte2 = this.view.getUint8(this.position++) & 0xff;
-        var byte3 = this.view.getUint8(this.position++) & 0xff;
-        var byte4 = this.view.getUint8(this.position++) & 0xff;
-        var byte5 = this.view.getUint8(this.position++) & 0xff;
-        var byte6 = this.view.getUint8(this.position++) & 0xff;
-        var byte7 = this.view.getUint8(this.position++) & 0xff;
-        var byte8 = this.view.getUint8(this.position++) & 0xff;
-        return (byte8 << 56)
-            + ((byte7 << 56) >>> 8)
-            + ((byte6 << 56) >>> 16)
-            + ((byte5 << 56) >>> 24)
-            + ((byte4 << 56) >>> 32)
-            + ((byte3 << 56) >>> 40)
-            + ((byte2 << 56) >>> 48)
-            + ((byte1 << 56) >>> 56);
+        // DataView doesn't support long. So we'll try manually
+
+        var b = [];
+        b[0] = this.view.getUint8(this.position);
+        b[1] = this.view.getUint8(this.position + 1);
+        b[2] = this.view.getUint8(this.position + 2);
+        b[3] = this.view.getUint8(this.position + 3);
+        b[4] = this.view.getUint8(this.position + 4);
+        b[5] = this.view.getUint8(this.position + 5);
+        b[6] = this.view.getUint8(this.position + 6);
+        b[7] = this.view.getUint8(this.position + 7);
+
+        var value = 0;
+        if (this.littleEndian) {
+            for (var i = b.length - 1; i >= 0; i--) {
+                value = (value * 256) + b[i];
+            }
+        } else {
+            for (var i = 0; i < b.length; i++) {
+                value = (value * 256) + b[i];
+            }
+        }
+
+
+        this.position += 8;
+        return value;
     }
 
     igv.BinaryParser.prototype.getString = function (len) {
@@ -108,9 +130,9 @@ var igv = (function (igv) {
         var s = "";
         var i;
         var c;
-        for (i=0; i<len; i++) {
+        for (i = 0; i < len; i++) {
             c = this.view.getUint8(this.position++);
-            if(c > 0) {
+            if (c > 0) {
                 s += String.fromCharCode(c);
             }
         }
@@ -146,7 +168,7 @@ var igv = (function (igv) {
      * TODO -- why isn't 8th byte used ?
      * @returns {*}
      */
-    igv.BinaryParser.prototype. getVPointer = function() {
+    igv.BinaryParser.prototype.getVPointer = function () {
 
         var position = this.position,
             offset = (this.view.getUint8(position + 1) << 8) | (this.view.getUint8(position)),
@@ -158,11 +180,11 @@ var igv = (function (igv) {
             block = byte6 + byte5 + byte4 + byte3 + byte2;
         this.position += 8;
 
-        if (block == 0 && offset == 0) {
-            return null;
-        } else {
-            return new VPointer(block, offset);
-        }
+        //       if (block == 0 && offset == 0) {
+        //           return null;
+        //       } else {
+        return new VPointer(block, offset);
+        //       }
     }
 
 
@@ -171,7 +193,17 @@ var igv = (function (igv) {
         this.offset = offset;
     }
 
-    VPointer.prototype.print = function() {
+    VPointer.prototype.isLessThan = function (vp) {
+        return this.block < vp.block ||
+            (this.block === vp.block && this.offset < vp.offset);
+    }
+
+    VPointer.prototype.isGreaterThan = function (vp) {
+        return this.block > vp.block ||
+            (this.block === vp.block && this.offset > vp.offset);
+    }
+
+    VPointer.prototype.print = function () {
         return "" + this.block + ":" + this.offset;
     }
 
