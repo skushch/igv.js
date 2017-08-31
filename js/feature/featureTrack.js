@@ -443,7 +443,8 @@ var igv = (function (igv) {
             geneColor = igv.browser.selection.colorForGene(feature.name);
         }
 
-        textFitsInBox = (boxX1 - boxX) > ctx.measureText(feature.name).width;
+        //textFitsInBox = (boxX1 - boxX) > ctx.measureText(feature.name).width;
+        textFitsInBox = true;
 
         if ((textFitsInBox || geneColor) && this.displayMode != "SQUISHED" && feature.name !== undefined) {
             geneFontStyle = {

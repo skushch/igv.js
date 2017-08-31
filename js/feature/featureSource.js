@@ -226,11 +226,11 @@ var igv = (function (igv) {
         function pack(featureList, maxRows) {
 
             var rows = [];
+            var PADDING = 1000;
 
             featureList.sort(function (a, b) {
                 return a.start - b.start;
-            })
-
+            });
 
             rows.push(-1000);
             featureList.forEach(function (feature) {
@@ -238,17 +238,17 @@ var igv = (function (igv) {
                 var i,
                     r,
                     len = Math.min(rows.length, maxRows),
-                    start = feature.start;
+                    start = feature.start - PADDING;
 
                 for (r = 0; r < len; r++) {
                     if (start >= rows[r]) {
                         feature.row = r;
-                        rows[r] = feature.end;
+                        rows[r] = feature.end + PADDING;
                         return;
                     }
                 }
                 feature.row = r;
-                rows[r] = feature.end;
+                rows[r] = feature.end + PADDING;
 
 
             });
