@@ -238,17 +238,19 @@ var igv = (function (igv) {
                 var i,
                     r,
                     len = Math.min(rows.length, maxRows),
-                    start = feature.start - PADDING;
+                    padding = feature.alleles ? 0 : PADDING,    // no padding for variants
+                    start = feature.start - padding,
+                    end = feature.end + padding;
 
                 for (r = 0; r < len; r++) {
                     if (start >= rows[r]) {
                         feature.row = r;
-                        rows[r] = feature.end + PADDING;
+                        rows[r] = end;
                         return;
                     }
                 }
                 feature.row = r;
-                rows[r] = feature.end + PADDING;
+                rows[r] = end;
 
 
             });
